@@ -37,26 +37,83 @@ O projeto roda em rede local ou via VPN, com frontend React/Vite, API Node/Expre
 
 ## Requisitos
 
-- Node.js instalado.
-- NPM instalado.
-- Git instalado.
+- Git.
+- Node.js LTS.
+- NPM.
+- Ferramentas de build do sistema, quando o SQLite nativo precisar compilar.
 
-## Instalação
+## Instalação rápida
 
 ```bash
+git clone https://github.com/ruisauloc/financeiro-local.git
+cd financeiro-local
 npm install
-```
-
-## Execução em desenvolvimento
-
-```bash
 npm run dev
 ```
 
 URLs padrão:
 
-- Frontend: `http://127.0.0.1:5179`
+- Interface: `http://127.0.0.1:5179`
 - API: `http://127.0.0.1:6397`
+
+## Windows
+
+Instale:
+
+- [Git for Windows](https://git-scm.com/download/win)
+- [Node.js LTS](https://nodejs.org/)
+
+Depois rode no PowerShell:
+
+```powershell
+git clone https://github.com/ruisauloc/financeiro-local.git
+cd financeiro-local
+npm install
+npm run dev
+```
+
+Se o `npm install` falhar ao compilar dependências nativas, instale o Visual Studio Build Tools com o componente de C++ para desktop.
+
+## Linux
+
+Ubuntu/Debian:
+
+```bash
+sudo apt update
+sudo apt install -y git nodejs npm build-essential python3
+git clone https://github.com/ruisauloc/financeiro-local.git
+cd financeiro-local
+npm install
+npm run dev
+```
+
+Fedora/RHEL:
+
+```bash
+sudo dnf install -y git nodejs npm gcc-c++ make python3
+git clone https://github.com/ruisauloc/financeiro-local.git
+cd financeiro-local
+npm install
+npm run dev
+```
+
+## macOS
+
+Com Homebrew:
+
+```bash
+brew install git node
+git clone https://github.com/ruisauloc/financeiro-local.git
+cd financeiro-local
+npm install
+npm run dev
+```
+
+Se o macOS pedir ferramentas de compilação:
+
+```bash
+xcode-select --install
+```
 
 Para acessar de outro dispositivo na mesma rede ou pela VPN, use o IP da máquina onde o sistema está rodando:
 
