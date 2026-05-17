@@ -13,11 +13,25 @@ const root = path.resolve(__dirname, "..");
 const dbPath = path.join(root, "financeiro.sqlite");
 const seedPath = path.join(root, "seed-from-workbook.json");
 const defaultAttachmentsDir = path.join(root, "uploads", "attachments");
+const runtimeConfigPath = path.join(root, "runtime-config.json");
+const defaultPorts = { apiPort: 6397, clientPort: 5179 };
 const upload = multer({ storage: multer.memoryStorage() });
 const app = express();
 const db = new Database(dbPath);
 const sessions = new Map();
 const loginAttempts = new Map();
+
+function loadRuntimeConfig() {
+  try {
+    return JSON.parse(fs.readFileSync(runtimeConfigPath, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+function writeRuntimeConfig(config) {
+  fs.writeFileSync(runtimeConfigPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+}
 
 app.use(cors({
   origin(origin, callback) {
@@ -346,6 +360,33 @@ function getAttachmentsDir() {
   return configured ? path.resolve(configured) : defaultAttachmentsDir;
 }
 
+function normalizePort(value, fallback) {
+  const port = Number(value || fallback);
+  if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+    throw new Error("Use portas entre 1024 e 65535.");
+  }
+  return port;
+}
+
+function normalizePorts(value = {}) {
+  const runtime = loadRuntimeConfig();
+  const savedApiPort = getSetting("apiPort", "") || runtime.apiPort;
+  const savedClientPort = getSetting("clientPort", "") || runtime.clientPort;
+  const apiPort = normalizePort(value.apiPort ?? savedApiPort, defaultPorts.apiPort);
+  const clientPort = normalizePort(value.clientPort ?? savedClientPort, defaultPorts.clientPort);
+  if (apiPort === clientPort) throw new Error("A porta da API e a porta da interface precisam ser diferentes.");
+  return { apiPort, clientPort };
+}
+
+function getAppPorts() {
+  const ports = normalizePorts();
+  return {
+    ...ports,
+    activeApiPort,
+    restartRequired: ports.apiPort !== activeApiPort,
+  };
+}
+
 function seedDb() {
   const count = one("SELECT COUNT(*) AS total FROM categories").total;
   const defaultAccounts = ["Conta Principal"];
@@ -534,6 +575,7 @@ app.get("/api/config", (_req, res) => {
     subcategories: all("SELECT s.*, c.name category, c.type result FROM subcategories s JOIN categories c ON c.id=s.category_id ORDER BY s.name"),
     institutions: all("SELECT * FROM institutions ORDER BY kind, name"),
     rules: all("SELECT r.*, s.name subcategory FROM rule_map r LEFT JOIN subcategories s ON s.id=r.subcategory_id ORDER BY priority, pattern"),
+    runtime: getAppPorts(),
   });
 });
 
@@ -678,6 +720,7 @@ app.get("/api/settings", (_req, res) => {
     attachmentsDir,
     effectiveAttachmentsDir: getAttachmentsDir(),
     defaultAttachmentsDir,
+    ports: getAppPorts(),
     appearance: JSON.parse(getSetting("appearance", "{}") || "{}"),
   });
 });
@@ -697,11 +740,18 @@ app.put("/api/settings", (req, res) => {
   if (req.body.appearance) {
     setSetting("appearance", JSON.stringify(req.body.appearance));
   }
+  if (Object.prototype.hasOwnProperty.call(req.body, "ports")) {
+    const ports = normalizePorts(req.body.ports);
+    setSetting("apiPort", String(ports.apiPort));
+    setSetting("clientPort", String(ports.clientPort));
+    writeRuntimeConfig(ports);
+  }
   res.json({
     ok: true,
     attachmentsDir: getSetting("attachmentsDir", ""),
     effectiveAttachmentsDir: getAttachmentsDir(),
     defaultAttachmentsDir,
+    ports: getAppPorts(),
     appearance: JSON.parse(getSetting("appearance", "{}") || "{}"),
   });
 });
@@ -1549,7 +1599,7 @@ initDb();
 seedDb();
 ensureCoreMappings();
 
-const port = Number(process.env.PORT || 6397);
-app.listen(port, "0.0.0.0", () => {
-  console.log(`Financeiro API em http://0.0.0.0:${port}`);
+const activeApiPort = normalizePort(process.env.PORT || getSetting("apiPort", "") || loadRuntimeConfig().apiPort, defaultPorts.apiPort);
+app.listen(activeApiPort, "0.0.0.0", () => {
+  console.log(`Financeiro API em http://0.0.0.0:${activeApiPort}`);
 });

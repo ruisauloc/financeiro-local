@@ -337,7 +337,7 @@ function AttachmentPicker({ form, setForm }) {
 function App() {
   const [active, setActive] = useState("dashboard");
   const [summary, setSummary] = useState(null);
-  const [config, setConfig] = useState({ institutions: [], categories: [], subcategories: [] });
+  const [config, setConfig] = useState({ institutions: [], categories: [], subcategories: [], runtime: { apiPort: 6397, clientPort: 5179, activeApiPort: 6397 } });
   const [transactions, setTransactions] = useState([]);
   const [message, setMessageState] = useState(null);
   const [quickOpen, setQuickOpen] = useState(false);
@@ -466,7 +466,7 @@ function App() {
           </div>
           <div className="topbar-actions">
             <PeriodFilter period={period} setPeriod={setPeriod} />
-            <div className="status-pill"><Database size={16} /> Porta API 6397</div>
+            <div className="status-pill"><Database size={16} /> Porta API {config.runtime?.activeApiPort || config.runtime?.apiPort || 6397}</div>
           </div>
         </header>
         {message && <div className={`toast ${message.type || "success"}`} onClick={() => setMessageState(null)}>{message.text}</div>}
@@ -1447,7 +1447,13 @@ function AdvancedSettings({ onSaved, setMessage, appearance, onAppearanceChange 
   const [confirmation, setConfirmation] = useState("");
   const [includeSettings, setIncludeSettings] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [settings, setSettings] = useState({ attachmentsDir: "", effectiveAttachmentsDir: "", defaultAttachmentsDir: "", appearance: mergeAppearance(appearance) });
+  const [settings, setSettings] = useState({
+    attachmentsDir: "",
+    effectiveAttachmentsDir: "",
+    defaultAttachmentsDir: "",
+    ports: { apiPort: 6397, clientPort: 5179, activeApiPort: 6397, restartRequired: false },
+    appearance: mergeAppearance(appearance),
+  });
 
   const loadSettings = async () => {
     const loaded = await api("/settings");
@@ -1485,10 +1491,16 @@ function AdvancedSettings({ onSaved, setMessage, appearance, onAppearanceChange 
       const saved = await api("/settings", {
         method: "PUT",
         headers: jsonHeaders(),
-        body: JSON.stringify({ attachmentsDir: settings.attachmentsDir }),
+        body: JSON.stringify({
+          attachmentsDir: settings.attachmentsDir,
+          ports: {
+            apiPort: settings.ports?.apiPort,
+            clientPort: settings.ports?.clientPort,
+          },
+        }),
       });
       setSettings(saved);
-      setMessage("Configurações salvas.");
+      setMessage(saved.ports?.restartRequired ? "Configurações salvas. Reinicie o aplicativo para aplicar as novas portas." : "Configurações salvas.");
     } catch (error) {
       setMessage(error.message);
     }
@@ -1555,6 +1567,27 @@ function AdvancedSettings({ onSaved, setMessage, appearance, onAppearanceChange 
       </div>
 
       <form className="form-panel" onSubmit={saveSettings}>
+        <h2>Geral</h2>
+        <div className="form-grid">
+          <Input
+            label="Porta da interface"
+            type="number"
+            value={settings.ports?.clientPort || 5179}
+            onChange={(clientPort) => setSettings({ ...settings, ports: { ...settings.ports, clientPort } })}
+          />
+          <Input
+            label="Porta da API"
+            type="number"
+            value={settings.ports?.apiPort || 6397}
+            onChange={(apiPort) => setSettings({ ...settings, ports: { ...settings.ports, apiPort } })}
+          />
+          <div className="path-info">
+            <span>API em uso agora</span>
+            <strong>{settings.ports?.activeApiPort || 6397}</strong>
+          </div>
+        </div>
+        <p className="muted">As portas são aplicadas depois de reiniciar o app. Use valores entre 1024 e 65535 e mantenha API e interface em portas diferentes.</p>
+
         <h2>Pasta de anexos</h2>
         <div className="form-grid">
           <Input
@@ -1569,7 +1602,7 @@ function AdvancedSettings({ onSaved, setMessage, appearance, onAppearanceChange 
           </div>
         </div>
         <p className="muted">Deixe vazio para usar a pasta padrão do projeto.</p>
-        <button className="primary">Salvar pasta</button>
+        <button className="primary">Salvar configurações</button>
       </form>
 
       <form className="danger-zone" onSubmit={clearBase}>

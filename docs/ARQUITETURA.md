@@ -8,6 +8,7 @@ Aplicação web local com frontend React, backend Node/Express e banco SQLite.
 - Backend/API: Express em `http://127.0.0.1:6397`
 - Banco padrão: `financeiro.sqlite`
 - Anexos padrão: `uploads/attachments`
+- Configuração local de portas: `runtime-config.json`
 - Origem migrada: planilha XLSM com fórmulas, macros, tabelas auxiliares e arquivos OFX
 
 ## Camadas
@@ -25,6 +26,8 @@ O comando `npm run dev` sobe dois processos:
 - `npm run client`: Vite escutando em `0.0.0.0:5179`.
 
 O Vite encaminha `/api` para a API local.
+
+As portas podem ser alteradas em `Avançado > Geral`. O backend grava os valores em `app_settings` e também em `runtime-config.json`, para que o Vite consiga ler a porta da interface e a porta de proxy da API no próximo start.
 
 ## Modelo SQLite
 
@@ -225,4 +228,3 @@ Operações disponíveis:
 - importar de volta para o SQLite atual a partir de SQLite externo ou planilha
 
 Estado atual: a aplicação ainda roda sobre o SQLite local principal. A camada de conexões já inicializa e migra bases externas, mas a troca definitiva do provider ativo depende de uma próxima refatoração do acesso a dados.
-

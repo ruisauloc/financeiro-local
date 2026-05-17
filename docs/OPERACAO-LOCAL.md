@@ -31,7 +31,14 @@ http://IP_DA_VPN:5179
 - Frontend: `5179`
 - API: `6397`
 
-Se alguma porta estiver ocupada, altere os scripts em `package.json` ou a variável `PORT`.
+As portas podem ser alteradas dentro do sistema em `Avançado > Geral`. Depois de salvar, reinicie a aplicação.
+
+Também é possível sobrescrever por variável de ambiente:
+
+- `CLIENT_PORT`: porta do Vite/frontend.
+- `PORT`: porta da API.
+
+A configuração salva pela tela fica em `runtime-config.json`, que é local e não vai para o GitHub.
 
 ## Backup
 

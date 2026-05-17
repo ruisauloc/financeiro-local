@@ -99,6 +99,8 @@ Por padrão:
 
 Esses arquivos e pastas são dados reais de uso e não devem ir para o GitHub.
 
+As portas podem ser alteradas em `Avançado > Geral`. Depois de salvar, reinicie o app para que a API e a interface subam nas novas portas. A configuração local fica em `runtime-config.json`, arquivo ignorado pelo Git.
+
 ## O que não vai para o GitHub
 
 O `.gitignore` bloqueia:
