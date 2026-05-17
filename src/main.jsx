@@ -49,6 +49,7 @@ import "./styles.css";
 const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const alphaPtBr = new Intl.Collator("pt-BR", { sensitivity: "base", numeric: true });
 const sortByNamePtBr = (rows) => [...rows].sort((a, b) => alphaPtBr.compare(a.name || "", b.name || ""));
+const normalizeText = (text) => String(text || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 const THEMES = {
   aurora: {
     name: "Aurora",
@@ -1117,7 +1118,7 @@ function OfxImport({ config, onSaved, setMessage }) {
   const [file, setFile] = useState(null);
   const [institutionId, setInstitutionId] = useState("");
   const [preview, setPreview] = useState(null);
-  const accounts = config.institutions.filter((i) => i.kind === "Conta");
+  const accounts = sortByNamePtBr(config.institutions).filter((i) => normalizeText(i.kind || "Conta").includes("conta"));
   const previewFile = async () => {
     if (!file) return;
     const body = new FormData();
@@ -1145,7 +1146,8 @@ function OfxImport({ config, onSaved, setMessage }) {
   return (
     <>
       <FormPanel title="Importar OFX" onSubmit={submit} button="Importar definitivo">
-        <Select label="Conta" value={institutionId} onChange={setInstitutionId} options={accounts.map((i) => [i.id, i.name])} />
+        <Select label="Conta" value={institutionId} onChange={setInstitutionId} options={accounts.map((i) => [i.id, `${i.name} · ${i.kind || "Conta"}`])} />
+        {!accounts.length && <p className="muted wide-field">Nenhuma conta bancária encontrada. Confira em Cadastros se a instituição está com tipo Conta.</p>}
         <label className="file-box">
           <Upload size={24} />
           <span>{file ? file.name : "Escolha um arquivo .ofx"}</span>
@@ -2350,12 +2352,11 @@ function SmartSubcategorySelect({ value, onChange, subcategories, label = "Subca
   const [query, setQuery] = useState(value || "");
   const [open, setOpen] = useState(false);
   useEffect(() => setQuery(value || ""), [value]);
-  const normalize = (text) => String(text || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-  const terms = normalize(query).split(/\s+/).filter(Boolean);
+  const terms = normalizeText(query).split(/\s+/).filter(Boolean);
   const filtered = subcategories
     .filter((item) => {
       if (!terms.length) return true;
-      const haystack = normalize(`${item.name} ${item.category} ${item.result}`);
+      const haystack = normalizeText(`${item.name} ${item.category} ${item.result}`);
       return terms.every((term) => haystack.includes(term));
     })
     .slice(0, 40);
