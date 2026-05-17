@@ -10,9 +10,11 @@ import * as XLSX from "xlsx";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
-const dbPath = path.join(root, "financeiro.sqlite");
-const seedPath = path.join(root, "seed-from-workbook.json");
-const defaultAttachmentsDir = path.join(root, "uploads", "attachments");
+const dbPath = path.resolve(process.env.FINANCEIRO_DB_PATH || path.join(root, "financeiro.sqlite"));
+const seedPath = process.env.FINANCEIRO_SEED_PATH === "none"
+  ? ""
+  : path.resolve(process.env.FINANCEIRO_SEED_PATH || path.join(root, "seed-from-workbook.json"));
+const defaultAttachmentsDir = path.resolve(process.env.FINANCEIRO_ATTACHMENTS_DIR || path.join(root, "uploads", "attachments"));
 const runtimeConfigPath = path.join(root, "runtime-config.json");
 const defaultPorts = { apiPort: 6397, clientPort: 5179 };
 const upload = multer({ storage: multer.memoryStorage() });
@@ -392,7 +394,7 @@ function seedDb() {
   const defaultAccounts = ["Conta Principal"];
   const addInstitution = db.prepare("INSERT OR IGNORE INTO institutions(name,kind,opening_balance) VALUES (?,?,?)");
   for (const account of defaultAccounts) addInstitution.run(account, "Conta", 0);
-  if (count || !fs.existsSync(seedPath)) return;
+  if (count || !seedPath || !fs.existsSync(seedPath)) return;
 
   const seed = JSON.parse(fs.readFileSync(seedPath, "utf8"));
   const addCategory = db.prepare("INSERT OR IGNORE INTO categories(name,type) VALUES (?,?)");

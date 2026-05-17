@@ -22,6 +22,24 @@ O projeto roda em rede local ou via VPN, com frontend React/Vite, API Node/Expre
 - Preparação para migração/exportação para SQLite externo, SQL Server e planilha.
 - Autenticação local por senha para uso em rede local ou VPN.
 
+## Capturas de Tela
+
+### Painel
+
+![Painel](docs/screenshots/painel.png)
+
+### Lançamentos
+
+![Lançamentos](docs/screenshots/lancamentos.png)
+
+### Cadastros
+
+![Cadastros](docs/screenshots/cadastros.png)
+
+### NextUpdates
+
+![NextUpdates](docs/screenshots/nextupdates.png)
+
 ## Stack
 
 - React 19
