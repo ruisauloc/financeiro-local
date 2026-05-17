@@ -1,0 +1,43 @@
+# Dependencias e build
+node_modules/
+dist/
+.vite/
+
+# Ambiente local
+.env
+.env.*
+!.env.example
+
+# Bancos e arquivos de runtime
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db
+*.db-shm
+*.db-wal
+
+# Dados financeiros e anexos locais
+uploads/
+OFX/
+*.ofx
+*.qfx
+*.xlsm
+*.xlsx
+*.xls
+*.csv
+*.tsv
+
+# Arquivos extraidos da planilha original com dados pessoais
+analysis-map.json
+seed-from-workbook.json
+vba-extract.txt
+
+# Logs e caches
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.DS_Store
+Thumbs.db
+
