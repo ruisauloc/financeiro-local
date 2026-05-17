@@ -1268,6 +1268,54 @@ input, select {
   justify-content: flex-end;
 }
 
+.next-updates-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.next-updates-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.next-update-card {
+  min-height: 170px;
+  display: grid;
+  align-content: space-between;
+  gap: 18px;
+  border: 1px solid color-mix(in srgb, var(--app-border) 70%, transparent);
+  border-radius: 8px;
+  padding: 16px;
+  background: color-mix(in srgb, var(--app-panel-strong) 82%, transparent);
+}
+
+.next-update-card div {
+  display: grid;
+  gap: 8px;
+}
+
+.next-update-card strong {
+  font-size: 17px;
+}
+
+.next-update-card span {
+  width: fit-content;
+  border-radius: 999px;
+  padding: 5px 9px;
+  color: var(--app-bg);
+  background: var(--app-primary);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.next-update-card p {
+  margin: 0;
+  color: var(--app-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .preview-section {
   background: color-mix(in srgb, var(--app-primary) 7%, transparent);
 }
@@ -1650,7 +1698,7 @@ code {
     position: static;
     height: auto;
   }
-  nav, .kpi-grid, .dashboard-grid, .form-grid, .transaction-form-grid, .map-grid, .mini-form, .preview-stats, .installment-actions, .advanced-options, .connection-grid, .dashboard-rule-grid {
+  nav, .kpi-grid, .dashboard-grid, .form-grid, .transaction-form-grid, .map-grid, .mini-form, .preview-stats, .installment-actions, .advanced-options, .connection-grid, .dashboard-rule-grid, .next-updates-grid {
     grid-template-columns: 1fr;
   }
   .installment-head,

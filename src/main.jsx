@@ -1524,6 +1524,7 @@ function AdvancedSettings({ onSaved, setMessage, appearance, onAppearanceChange 
         <button className={tab === "connections" ? "active" : ""} onClick={() => setTab("connections")}>Conexões</button>
         <button className={tab === "appearance" ? "active" : ""} onClick={() => setTab("appearance")}>Personalização</button>
         <button className={tab === "dashboards" ? "active" : ""} onClick={() => setTab("dashboards")}>Dashboards</button>
+        <button className={tab === "nextUpdates" ? "active" : ""} onClick={() => setTab("nextUpdates")}>NextUpdates</button>
       </div>
 
       {tab === "connections" && <ConnectionSettings setMessage={setMessage} />}
@@ -1551,6 +1552,7 @@ function AdvancedSettings({ onSaved, setMessage, appearance, onAppearanceChange 
           setMessage={setMessage}
         />
       )}
+      {tab === "nextUpdates" && <NextUpdatesSettings />}
 
       {tab === "general" && (
         <>
@@ -1925,6 +1927,54 @@ function DashboardSettings({ appearance, onChange, setMessage }) {
         <button className="primary">Salvar dashboards</button>
       </div>
     </form>
+  );
+}
+
+function NextUpdatesSettings() {
+  const cards = [
+    {
+      title: "Integração com IA",
+      status: "Planejado",
+      body: "Classificação automática de lançamentos, leitura de comprovantes e sugestões de orçamento com base no histórico local.",
+    },
+    {
+      title: "AgentBot",
+      status: "Conceito",
+      body: "Assistente dentro do sistema para consultar gastos, explicar dashboards, encontrar lançamentos e executar rotinas guiadas.",
+    },
+    {
+      title: "Agent WhatsApp",
+      status: "Backlog",
+      body: "Registro rápido por mensagem, envio de comprovante por foto e alertas de faturas ou vencimentos pelo WhatsApp.",
+    },
+    {
+      title: "Agent Telegram",
+      status: "Backlog",
+      body: "Bot privado para lançar despesas, consultar saldo do mês, receber resumo diário e aprovar categorização sugerida.",
+    },
+    {
+      title: "SMS Alerts",
+      status: "Backlog",
+      body: "Alertas simples por SMS para vencimentos críticos, limite de gastos e confirmações de rotinas importantes.",
+    },
+  ];
+
+  return (
+    <div className="panel full next-updates-panel">
+      <PanelTitle icon={Sparkles} title="NextUpdates" />
+      <p className="muted">Ideias mapeadas para próximas evoluções. Estes cards são um roadmap visual e ainda não ativam integrações externas.</p>
+      <div className="next-updates-grid">
+        {cards.map((card) => (
+          <div className="next-update-card" key={card.title}>
+            <div>
+              <strong>{card.title}</strong>
+              <span>{card.status}</span>
+            </div>
+            <p>{card.body}</p>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
