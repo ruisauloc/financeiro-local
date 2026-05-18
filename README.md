@@ -1,13 +1,14 @@
 # Financeiro Local
 
-Sistema financeiro web local, criado a partir da análise de uma planilha XLSM com macros, fórmulas, OFX, parcelamentos e painel financeiro.
+Sistema financeiro web local criado a partir da análise de uma planilha XLSM com macros, fórmulas, OFX, parcelamentos e painel financeiro.
 
 O projeto roda em rede local ou via VPN, com frontend React/Vite, API Node/Express e banco SQLite por padrão.
 
 ## Principais recursos
 
 - Painel com filtros de dia, mês e ano.
-- Cards de receitas, despesas, faturas e previstos.
+- Cards de receitas, despesas, faturas, previstos e orçamentos.
+- Alertas de orçamento com percentuais configuráveis.
 - Gráficos de fluxo mensal, top categorias e top subcategorias.
 - Configuração avançada de dashboards, regras, modelos de gráficos, visibilidade e aparência.
 - Lançamentos manuais com entrada, saída, previsto, anexos de arquivo e foto.
@@ -16,6 +17,7 @@ O projeto roda em rede local ou via VPN, com frontend React/Vite, API Node/Expre
 - Parcelamentos com quantidade de parcelas, juros, antecipação, quitação e reabertura.
 - Assinaturas mensais ou anuais, sem quantidade fixa de parcelas.
 - Importação OFX com prevenção de duplicidade por hash e FITID.
+- Sugestões de subcategoria na prévia do OFX.
 - Cadastro de categorias, subcategorias, instituições e regras automáticas.
 - Personalização de tema, cores, densidade e posição do botão flutuante.
 - Configuração da pasta local de anexos.
@@ -60,21 +62,21 @@ O projeto roda em rede local ou via VPN, com frontend React/Vite, API Node/Expre
 - NPM.
 - Ferramentas de build do sistema, quando o SQLite nativo precisar compilar.
 
-## Instalação rápida
+## Instalação com senha padrão
 
-```bash
-git clone https://github.com/ruisauloc/financeiro-local.git
-cd financeiro-local
-npm install
-npm run dev
+Os instaladores abaixo preparam o projeto, criam o banco local se ele ainda não existir e aplicam a senha inicial:
+
+```text
+123456
 ```
 
-URLs padrão:
+Depois do primeiro login, altere a senha em:
 
-- Interface: `http://127.0.0.1:5179`
-- API: `http://127.0.0.1:6397`
+```text
+Avançado > Geral > Segurança
+```
 
-## Windows
+### Windows
 
 Instale:
 
@@ -86,13 +88,19 @@ Depois rode no PowerShell:
 ```powershell
 git clone https://github.com/ruisauloc/financeiro-local.git
 cd financeiro-local
-npm install
+powershell -ExecutionPolicy Bypass -File .\installers\install-windows.ps1
 npm run dev
+```
+
+Atalho para iniciar depois:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\installers\start-windows.ps1
 ```
 
 Se o `npm install` falhar ao compilar dependências nativas, instale o Visual Studio Build Tools com o componente de C++ para desktop.
 
-## Linux
+### Linux
 
 Ubuntu/Debian:
 
@@ -101,7 +109,8 @@ sudo apt update
 sudo apt install -y git nodejs npm build-essential python3
 git clone https://github.com/ruisauloc/financeiro-local.git
 cd financeiro-local
-npm install
+chmod +x installers/*.sh
+./installers/install-linux.sh
 npm run dev
 ```
 
@@ -111,11 +120,18 @@ Fedora/RHEL:
 sudo dnf install -y git nodejs npm gcc-c++ make python3
 git clone https://github.com/ruisauloc/financeiro-local.git
 cd financeiro-local
-npm install
+chmod +x installers/*.sh
+./installers/install-linux.sh
 npm run dev
 ```
 
-## macOS
+Atalho para iniciar depois:
+
+```bash
+./installers/start-linux.sh
+```
+
+### macOS
 
 Com Homebrew:
 
@@ -123,7 +139,8 @@ Com Homebrew:
 brew install git node
 git clone https://github.com/ruisauloc/financeiro-local.git
 cd financeiro-local
-npm install
+chmod +x installers/*.sh
+./installers/install-macos.sh
 npm run dev
 ```
 
@@ -132,6 +149,28 @@ Se o macOS pedir ferramentas de compilação:
 ```bash
 xcode-select --install
 ```
+
+Atalho para iniciar depois:
+
+```bash
+./installers/start-macos.sh
+```
+
+## Instalação manual
+
+```bash
+git clone https://github.com/ruisauloc/financeiro-local.git
+cd financeiro-local
+npm install
+npm run dev
+```
+
+Na instalação manual, se não houver senha configurada, o sistema pedirá a criação da senha no primeiro acesso.
+
+## URLs padrão
+
+- Interface: `http://127.0.0.1:5179`
+- API: `http://127.0.0.1:6397`
 
 Para acessar de outro dispositivo na mesma rede ou pela VPN, use o IP da máquina onde o sistema está rodando:
 
@@ -147,9 +186,16 @@ http://IP_DA_VPN:5179
 
 ## Primeiro acesso
 
-No primeiro acesso, o sistema solicita a criação de uma senha local. Essa senha fica gravada com hash no banco SQLite local.
+Com instalador:
 
-Depois disso, cada navegador ou celular pode fazer login separadamente. O sistema aceita múltiplas sessões.
+- Senha inicial: `123456`.
+- Altere em `Avançado > Geral > Segurança`.
+
+Sem instalador:
+
+- O sistema solicita a criação de uma senha local no primeiro acesso.
+
+A senha fica gravada com hash no banco SQLite local. Cada navegador ou celular pode fazer login separadamente. O sistema aceita múltiplas sessões.
 
 ## Build
 
@@ -195,7 +241,9 @@ O app foi pensado para uso local, rede doméstica/escritório ou VPN privada.
 
 Recursos atuais:
 
-- Senha local obrigatória após configuração inicial.
+- Senha local obrigatória.
+- Senha padrão opcional apenas via instalador.
+- Troca de senha em `Avançado > Geral > Segurança`.
 - Hash de senha com PBKDF2.
 - Cookie de sessão HTTP-only.
 - Proteção das rotas da API.
@@ -221,20 +269,3 @@ No estado atual, a aplicação ainda executa sobre o SQLite local principal. As 
 - [Mapeamento da planilha original](docs/MAPEAMENTO-PLANILHA.md)
 - [Segurança](docs/SEGURANCA.md)
 - [Operação local](docs/OPERACAO-LOCAL.md)
-
-## Publicação no GitHub
-
-Depois de configurar o repositório remoto:
-
-```bash
-git remote add origin git@github.com:SEU_USUARIO/financeiro-local.git
-git branch -M main
-git push -u origin main
-```
-
-Se o remoto já existir:
-
-```bash
-git remote set-url origin git@github.com:SEU_USUARIO/financeiro-local.git
-git push -u origin main
-```

@@ -88,6 +88,7 @@ const DEFAULT_EXTRA_DASHBOARDS = {
   uncategorized: false,
   withoutSubcategory: false,
   transactionCount: false,
+  budgetBalance: false,
 };
 const DEFAULT_DASHBOARD_RULES = {
   topCategoriesResult: "Despesa",
@@ -409,6 +410,7 @@ function App() {
     ["ofx", FileInput, "OFX"],
     ["installments", CalendarClock, "Parcelas"],
     ["subscriptions", RefreshCw, "Assinaturas"],
+    ["budgets", Banknote, "Orçamento"],
     ["cards", CreditCard, "Faturas"],
     ["transfer", ArrowLeftRight, "Transferir"],
     ["settings", Settings2, "Cadastros"],
@@ -466,6 +468,7 @@ function App() {
             <h1>{nav.find(([key]) => key === active)?.[2]}</h1>
           </div>
           <div className="topbar-actions">
+            <BudgetTopbar budgets={summary?.budgets?.items || []} />
             <PeriodFilter period={period} setPeriod={setPeriod} />
             <div className="status-pill"><Database size={16} /> Porta API {config.runtime?.activeApiPort || config.runtime?.apiPort || 6397}</div>
           </div>
@@ -499,6 +502,7 @@ function App() {
           {active === "ofx" && <OfxImport config={config} onSaved={refresh} setMessage={setMessage} />}
           {active === "installments" && <Installments config={config} onSaved={refresh} setMessage={setMessage} />}
           {active === "subscriptions" && <Subscriptions config={config} onSaved={refresh} setMessage={setMessage} />}
+          {active === "budgets" && <Budgets config={config} onSaved={refresh} setMessage={setMessage} />}
           {active === "cards" && <CardPayment config={config} onSaved={refresh} setMessage={setMessage} />}
           {active === "transfer" && <Transfer config={config} onSaved={refresh} setMessage={setMessage} />}
           {active === "settings" && <Settings config={config} onSaved={refresh} setMessage={setMessage} />}
@@ -682,7 +686,34 @@ function PeriodFilter({ period, setPeriod }) {
   );
 }
 
+function BudgetTopbar({ budgets }) {
+  const activeBudgets = (budgets || []).filter((budget) => budget.status === "Ativo");
+  if (!activeBudgets.length) return null;
+  return (
+    <div className="budget-topbar-list" aria-label="Orçamentos ativos">
+      {activeBudgets.map((budget) => {
+        const used = Number(budget.used || 0);
+        const cappedUsed = Math.max(0, Math.min(100, used));
+        const overLimit = Math.max(0, used - 100);
+        return (
+          <div
+            className={`budget-pill ${budget.severity || "ok"}`}
+            key={budget.id}
+            style={{ "--budget-fill": `${cappedUsed}%` }}
+            title={`${budget.name}: ${used}% usado (${money.format(budget.spent || 0)} de ${money.format(budget.amount || 0)})`}
+          >
+            <span>{budget.name}</span>
+            <strong>{used}%</strong>
+            {overLimit > 0 && <em>+{Math.round(overLimit)}%</em>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function Dashboard({ summary, transactions, appearance }) {
+  const [budgetAlertsCollapsed, setBudgetAlertsCollapsed] = useState(false);
   if (!summary) return <Empty title="Carregando dados" />;
   const appliedAppearance = mergeAppearance(appearance);
   const colors = appliedAppearance.customColors;
@@ -700,6 +731,7 @@ function Dashboard({ summary, transactions, appearance }) {
     extras.uncategorized && ["Sem categoria", uncategorizedTotal, "future"],
     extras.withoutSubcategory && ["Sem subcategoria", withoutSubcategoryTotal, "expense"],
     extras.transactionCount && ["Lançamentos", transactions.length, "card", "count"],
+    extras.budgetBalance && ["Orçamento livre", summary.budgets?.remaining || 0, (summary.budgets?.remaining || 0) < 0 ? "expense" : "income"],
   ].filter(Boolean);
   const cards = [
     ["Receitas", summary.totals.receita, "income"],
@@ -721,6 +753,28 @@ function Dashboard({ summary, transactions, appearance }) {
       )}
 
       <section className="dashboard-grid">
+        {summary.budgets?.alerts?.length > 0 && (
+          <div className={`panel wide budget-alert-panel ${budgetAlertsCollapsed ? "collapsed" : ""}`}>
+            <div className="budget-alert-panel-head">
+              <PanelTitle icon={Banknote} title="Alertas de Orçamento" />
+              <button type="button" className="ghost compact" onClick={() => setBudgetAlertsCollapsed((value) => !value)}>
+                {budgetAlertsCollapsed ? "Expandir" : "Recolher"}
+              </button>
+            </div>
+            {!budgetAlertsCollapsed && (
+              <div className="budget-alert-list">
+                {summary.budgets.alerts.slice(0, 6).map((budget) => (
+                  <div className={`budget-alert ${budget.severity}`} key={budget.id}>
+                    <strong>{budget.name}</strong>
+                    <span>{budget.used}% usado · {money.format(budget.spent)} de {money.format(budget.amount)}</span>
+                    <small>{budget.remaining < 0 ? `Estourou ${money.format(Math.abs(budget.remaining))}` : `Restam ${money.format(budget.remaining)}`}</small>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {blocks.dashboardCategories && summary.dashboardCategories?.length > 0 && (
           <div className="panel wide">
             <PanelTitle icon={LayoutDashboard} title="Categorias no painel" />
@@ -1118,42 +1172,101 @@ function OfxImport({ config, onSaved, setMessage }) {
   const [file, setFile] = useState(null);
   const [institutionId, setInstitutionId] = useState("");
   const [preview, setPreview] = useState(null);
+  const [selectedSuggestions, setSelectedSuggestions] = useState({});
+  const [customSearches, setCustomSearches] = useState({});
+  const [loading, setLoading] = useState("");
   const accounts = sortByNamePtBr(config.institutions).filter((i) => normalizeText(i.kind || "Conta").includes("conta"));
   const previewFile = async () => {
     if (!file) return;
+    setLoading("Analisando OFX");
     const body = new FormData();
     body.append("file", file);
-    const result = await fetch("/api/ofx/preview", { method: "POST", body }).then(async (r) => {
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.error);
-      return data;
-    });
-    setPreview(result);
+    try {
+      const result = await fetch("/api/ofx/preview", { method: "POST", body }).then(async (r) => {
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error);
+        return data;
+      });
+      setPreview(result);
+      setSelectedSuggestions({});
+      setCustomSearches({});
+    } finally {
+      setLoading("");
+    }
   };
   const submit = async (e) => {
     e.preventDefault();
+    if (!file) return setMessage("Escolha um arquivo OFX.");
+    if (!preview) return setMessage("Pré-visualize o OFX antes de importar para confirmar as sugestões.");
+    if (!institutionId) return setMessage("Selecione a conta antes de importar.");
+    const pendingReviews = reviewTransactions.filter((t) => !selectedSuggestions[t.key]);
+    if (pendingReviews.length) return setMessage(`Revise ${pendingReviews.length} item(ns) antes de importar.`);
+    setLoading("Importando OFX");
     const body = new FormData();
     body.append("file", file);
     body.append("institutionId", institutionId);
-    const result = await fetch("/api/ofx/import", { method: "POST", body }).then(async (r) => {
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.error);
-      return data;
-    });
-    setMessage(`OFX importado: ${result.inserted} transações.`);
-    onSaved();
+    body.append("overrides", JSON.stringify(selectedSuggestions));
+    try {
+      const result = await fetch("/api/ofx/import", { method: "POST", body }).then(async (r) => {
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error);
+        return data;
+      });
+      setMessage(`OFX importado: ${result.inserted} transações.`);
+      setPreview(null);
+      setSelectedSuggestions({});
+      setCustomSearches({});
+      onSaved();
+    } finally {
+      setLoading("");
+    }
   };
+  const chooseSuggestion = (transactionKey, optionId) => {
+    setSelectedSuggestions((current) => {
+      const next = { ...current };
+      if (Number(next[transactionKey]) === Number(optionId)) delete next[transactionKey];
+      else next[transactionKey] = optionId;
+      return next;
+    });
+    setCustomSearches((current) => ({ ...current, [transactionKey]: "" }));
+  };
+  const setCustomSearch = (transactionKey, value) => {
+    setCustomSearches((current) => ({ ...current, [transactionKey]: value }));
+    if (!String(value || "").trim()) {
+      setSelectedSuggestions((current) => {
+        const next = { ...current };
+        delete next[transactionKey];
+        return next;
+      });
+    }
+  };
+  const chooseCustomSubcategory = (transactionKey, item) => {
+    setSelectedSuggestions((current) => ({ ...current, [transactionKey]: item.id }));
+    setCustomSearch(transactionKey, `${item.name} · ${item.category}`);
+  };
+  const reviewTransactions = preview?.transactions.filter((t) => !t.willApplySuggestion) || [];
+  const pendingReviewCount = reviewTransactions.filter((t) => !selectedSuggestions[t.key]).length;
+  const selectedCount = Object.keys(selectedSuggestions).length;
   return (
     <>
+      {loading && (
+        <div className="loading-backdrop" role="status" aria-live="polite">
+          <div className="loading-card">
+            <span className="loading-spinner" />
+            <strong>{loading}</strong>
+            <small>Preparando a importação com as regras e escolhas da prévia.</small>
+          </div>
+        </div>
+      )}
       <FormPanel title="Importar OFX" onSubmit={submit} button="Importar definitivo">
         <Select label="Conta" value={institutionId} onChange={setInstitutionId} options={accounts.map((i) => [i.id, `${i.name} · ${i.kind || "Conta"}`])} />
         {!accounts.length && <p className="muted wide-field">Nenhuma conta bancária encontrada. Confira em Cadastros se a instituição está com tipo Conta.</p>}
         <label className="file-box">
           <Upload size={24} />
           <span>{file ? file.name : "Escolha um arquivo .ofx"}</span>
-          <input type="file" accept=".ofx" onChange={(e) => { setFile(e.target.files?.[0]); setPreview(null); }} />
+          <input type="file" accept=".ofx" onChange={(e) => { setFile(e.target.files?.[0]); setPreview(null); setSelectedSuggestions({}); setCustomSearches({}); }} />
         </label>
-        <button type="button" className="secondary" onClick={() => previewFile().catch((e) => setMessage(e.message))}>Pré-visualizar</button>
+        <button type="button" className="secondary" disabled={!file || Boolean(loading)} onClick={() => previewFile().catch((e) => setMessage(e.message))}>Pré-visualizar</button>
       </FormPanel>
       {preview && (
         <div className="panel">
@@ -1162,18 +1275,81 @@ function OfxImport({ config, onSaved, setMessage }) {
             <span>Período: {preview.periodStart} a {preview.periodEnd}</span>
             <span>Entradas: {money.format(preview.totalCredits)}</span>
             <span>Saídas: {money.format(Math.abs(preview.totalDebits))}</span>
+            <span>Auto: {preview.suggestionSummary?.auto || 0}</span>
+            <span>Revisar: {preview.suggestionSummary?.review || 0}</span>
+            <span>Escolhidas: {selectedCount}</span>
+            <span>Pendentes: {pendingReviewCount}</span>
             <span>{preview.duplicateFile ? "Arquivo já importado" : "Arquivo novo"}</span>
           </div>
+          {reviewTransactions.length > 0 && (
+            <div className="ofx-review-box">
+              <div className="ofx-review-head">
+                <strong>Revisar antes de importar</strong>
+                <span>{pendingReviewCount ? `${pendingReviewCount} pendente(s)` : "Tudo revisado"}</span>
+              </div>
+              <div className="ofx-review-list">
+                {reviewTransactions.map((t) => (
+                  <div className={selectedSuggestions[t.key] ? "ofx-review-item done" : "ofx-review-item"} key={t.key}>
+                    <div className="ofx-review-meta">
+                      <strong>{t.note}</strong>
+                      <span>{t.date} · {t.direction} · {money.format(t.amountAbs)} · {t.suggestionConfidence || 0}%</span>
+                      <small>{t.suggestionReason}</small>
+                    </div>
+                    <div className="ofx-suggestion-options compact">
+                      {(t.suggestionOptions || []).slice(0, 3).map((option) => (
+                        <button
+                          key={option.id}
+                          type="button"
+                          className={selectedSuggestions[t.key] === option.id ? "selected" : ""}
+                          onClick={() => chooseSuggestion(t.key, option.id)}
+                        >
+                          <span>{option.name}</span>
+                          <small>{option.category} · {option.result}</small>
+                        </button>
+                      ))}
+                    </div>
+                    <OfxSubcategorySearch
+                      value={customSearches[t.key] || ""}
+                      selectedId={selectedSuggestions[t.key]}
+                      onQueryChange={(value) => setCustomSearch(t.key, value)}
+                      onSelect={(item) => chooseCustomSubcategory(t.key, item)}
+                      subcategories={config.subcategories}
+                    />
+                    {!(t.suggestionOptions || []).length && <small className="ofx-no-options">Sem subcategoria próxima encontrada. Confira os cadastros.</small>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="table-wrap">
-            <table>
-              <thead><tr><th>Data</th><th>Tipo</th><th>Memo</th><th>Sugestão</th><th>Valor</th></tr></thead>
+            <table className="ofx-preview-table">
+              <thead><tr><th>Data</th><th>Tipo</th><th>Memo</th><th>Contexto</th><th>Sugestões</th><th>Conf.</th><th>Valor</th></tr></thead>
               <tbody>
                 {preview.transactions.slice(0, 40).map((t, i) => (
                   <tr key={`${t.fitid}-${i}`}>
                     <td>{t.date}</td>
                     <td>{t.duplicate ? "Duplicado" : t.direction}</td>
                     <td>{t.note}</td>
-                    <td>{t.suggestedCategory || t.suggestedResult}</td>
+                    <td>{t.suggestedContext || t.suggestedResult}</td>
+                    <td className="ofx-suggestion-cell">
+                      <strong>{t.willApplySuggestion ? "Aplicação automática" : "Escolha uma sugestão"}</strong>
+                      <div className="ofx-suggestion-options">
+                        {(t.suggestionOptions || []).map((option) => (
+                          <button
+                            key={option.id}
+                            type="button"
+                            className={selectedSuggestions[t.key] === option.id || (!selectedSuggestions[t.key] && t.willApplySuggestion && option.name === t.suggestedSubcategory) ? "selected" : ""}
+                            onClick={() => chooseSuggestion(t.key, option.id)}
+                          >
+                            <span>{option.name}</span>
+                            <small>{option.category} · {option.result}</small>
+                          </button>
+                        ))}
+                      </div>
+                      {t.suggestedAction && <span>{t.suggestedAction}{t.suggestedSubscription ? `: ${t.suggestedSubscription}` : ""}</span>}
+                      <small>{selectedSuggestions[t.key] ? "Vai importar com a opção escolhida." : t.willApplySuggestion ? "Vai importar automaticamente. Você pode trocar clicando em outra opção." : t.suggestionReason}</small>
+                    </td>
+                    <td>{t.suggestionConfidence ? `${t.suggestionConfidence}%` : "-"}</td>
                     <td className={t.amount >= 0 ? "pos" : "neg"}>{money.format(t.amountAbs)}</td>
                   </tr>
                 ))}
@@ -1353,6 +1529,92 @@ function Subscriptions({ config, onSaved, setMessage }) {
   );
 }
 
+function Budgets({ config, onSaved, setMessage }) {
+  const monthStart = today().slice(0, 8) + "01";
+  const [form, setForm] = useState({ name: "", amount: "", startDate: monthStart, endDate: today(), categoryId: "", subcategoryId: "", status: "Ativo" });
+  const [data, setData] = useState({ rows: [], alerts: { levels: [50, 75, 95] } });
+  const loadBudgets = async () => setData(await api("/budgets"));
+  useEffect(() => {
+    loadBudgets().catch((e) => setMessage(e.message));
+  }, []);
+  const categories = sortByNamePtBr(config.categories).filter((c) => c.type === "Despesa");
+  const subcategories = sortByNamePtBr(config.subcategories).filter((s) => !form.categoryId || Number(s.category_id) === Number(form.categoryId));
+  const submit = async (e) => {
+    e.preventDefault();
+    await api("/budgets", { method: "POST", headers: jsonHeaders(), body: JSON.stringify(form) });
+    setForm({ name: "", amount: "", startDate: monthStart, endDate: today(), categoryId: "", subcategoryId: "", status: "Ativo" });
+    await loadBudgets();
+    onSaved();
+    setMessage("Orçamento criado.");
+  };
+  const updateBudget = async (row, patch) => {
+    await api(`/budgets/${row.id}`, {
+      method: "PUT",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        name: row.name,
+        amount: row.amount,
+        startDate: row.start_date,
+        endDate: row.end_date,
+        categoryId: row.category_id || "",
+        subcategoryId: row.subcategory_id || "",
+        status: row.status,
+        ...patch,
+      }),
+    });
+    await loadBudgets();
+    onSaved();
+    setMessage("Orçamento atualizado.");
+  };
+  const removeBudget = async (id) => {
+    await api(`/budgets/${id}`, { method: "DELETE" });
+    await loadBudgets();
+    onSaved();
+    setMessage("Orçamento excluído.");
+  };
+
+  return (
+    <>
+      <FormPanel title="Novo orçamento" onSubmit={(e) => submit(e).catch((error) => setMessage(error.message))} button="Criar orçamento">
+        <Input label="Nome" value={form.name} onChange={(name) => setForm({ ...form, name })} />
+        <Input label="Meta de gasto" type="number" value={form.amount} onChange={(amount) => setForm({ ...form, amount })} />
+        <Input label="Data inicial" type="date" value={form.startDate} onChange={(startDate) => setForm({ ...form, startDate })} />
+        <Input label="Data final" type="date" value={form.endDate} onChange={(endDate) => setForm({ ...form, endDate })} />
+        <Select label="Categoria opcional" value={form.categoryId} onChange={(categoryId) => setForm({ ...form, categoryId, subcategoryId: "" })} options={categories.map((c) => [c.id, c.name])} />
+        <Select label="Subcategoria opcional" value={form.subcategoryId} onChange={(subcategoryId) => setForm({ ...form, subcategoryId })} options={subcategories.map((s) => [s.id, `${s.name} · ${s.category}`])} />
+      </FormPanel>
+      <div className="panel">
+        <PanelTitle icon={Banknote} title="Orçamentos" />
+        <div className="budget-list">
+          {data.rows.map((row) => (
+            <div className={`budget-card ${row.severity}`} key={row.id}>
+              <div className="budget-card-head">
+                <div>
+                  <strong>{row.name}</strong>
+                  <span>{row.start_date} a {row.end_date}</span>
+                </div>
+                <em>{row.used}%</em>
+              </div>
+              <div className="budget-progress"><span style={{ width: `${Math.min(140, row.used || 0)}%` }} /></div>
+              <div className="budget-card-values">
+                <span>Gasto: {money.format(row.spent || 0)}</span>
+                <span>Meta: {money.format(row.amount || 0)}</span>
+                <strong className={row.remaining < 0 ? "neg" : "pos"}>{row.remaining < 0 ? "Negativo " : "Livre "}{money.format(row.remaining || 0)}</strong>
+              </div>
+              <small>{row.subcategory || row.category || "Todas as despesas"} · {row.status}</small>
+              <div className="row-actions">
+                <button type="button" onClick={() => updateBudget(row, { status: row.status === "Ativo" ? "Pausado" : "Ativo" }).catch((e) => setMessage(e.message))}>{row.status === "Ativo" ? "Pausar" : "Ativar"}</button>
+                <button type="button" className="danger" onClick={() => removeBudget(row.id).catch((e) => setMessage(e.message))}><Trash2 size={16} /></button>
+              </div>
+            </div>
+          ))}
+          {!data.rows.length && <Empty title="Nenhum orçamento cadastrado" />}
+        </div>
+      </div>
+    </>
+  );
+}
+
 function CardPayment({ config, onSaved, setMessage }) {
   const cards = config.institutions.filter((i) => i.kind === "Cartão");
   const accounts = config.institutions.filter((i) => i.kind === "Conta");
@@ -1449,12 +1711,14 @@ function AdvancedSettings({ onSaved, setMessage, appearance, onAppearanceChange 
   const [confirmation, setConfirmation] = useState("");
   const [includeSettings, setIncludeSettings] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({ currentPassword: "", nextPassword: "", confirmPassword: "" });
   const [settings, setSettings] = useState({
     attachmentsDir: "",
     effectiveAttachmentsDir: "",
     defaultAttachmentsDir: "",
     ports: { apiPort: 6397, clientPort: 5179, activeApiPort: 6397, restartRequired: false },
     appearance: mergeAppearance(appearance),
+    budgetAlerts: { levels: [50, 75, 95] },
   });
 
   const loadSettings = async () => {
@@ -1495,14 +1759,40 @@ function AdvancedSettings({ onSaved, setMessage, appearance, onAppearanceChange 
         headers: jsonHeaders(),
         body: JSON.stringify({
           attachmentsDir: settings.attachmentsDir,
+          budgetAlerts: settings.budgetAlerts,
           ports: {
             apiPort: settings.ports?.apiPort,
             clientPort: settings.ports?.clientPort,
           },
         }),
       });
-      setSettings(saved);
+      const nextAppearance = mergeAppearance(saved.appearance);
+      setSettings({ ...saved, appearance: nextAppearance });
+      onAppearanceChange(nextAppearance);
+      localStorage.setItem("financeiroAppearance", JSON.stringify(nextAppearance));
       setMessage(saved.ports?.restartRequired ? "Configurações salvas. Reinicie o aplicativo para aplicar as novas portas." : "Configurações salvas.");
+    } catch (error) {
+      setMessage(error.message);
+    }
+  };
+
+  const changePassword = async (e) => {
+    e.preventDefault();
+    if (passwordForm.nextPassword !== passwordForm.confirmPassword) {
+      setMessage("A nova senha e a confirmação não conferem.");
+      return;
+    }
+    try {
+      await api("/auth/password", {
+        method: "PUT",
+        headers: jsonHeaders(),
+        body: JSON.stringify({
+          currentPassword: passwordForm.currentPassword,
+          nextPassword: passwordForm.nextPassword,
+        }),
+      });
+      setPasswordForm({ currentPassword: "", nextPassword: "", confirmPassword: "" });
+      setMessage("Senha alterada com sucesso.");
     } catch (error) {
       setMessage(error.message);
     }
@@ -1526,6 +1816,7 @@ function AdvancedSettings({ onSaved, setMessage, appearance, onAppearanceChange 
         <button className={tab === "connections" ? "active" : ""} onClick={() => setTab("connections")}>Conexões</button>
         <button className={tab === "appearance" ? "active" : ""} onClick={() => setTab("appearance")}>Personalização</button>
         <button className={tab === "dashboards" ? "active" : ""} onClick={() => setTab("dashboards")}>Dashboards</button>
+        <button className={tab === "budgetAlerts" ? "active" : ""} onClick={() => setTab("budgetAlerts")}>Alertas de Orçamento</button>
         <button className={tab === "nextUpdates" ? "active" : ""} onClick={() => setTab("nextUpdates")}>NextUpdates</button>
       </div>
 
@@ -1555,6 +1846,13 @@ function AdvancedSettings({ onSaved, setMessage, appearance, onAppearanceChange 
         />
       )}
       {tab === "nextUpdates" && <NextUpdatesSettings />}
+      {tab === "budgetAlerts" && (
+        <BudgetAlertSettings
+          value={settings.budgetAlerts}
+          onChange={(budgetAlerts) => setSettings({ ...settings, budgetAlerts })}
+          onSave={saveSettings}
+        />
+      )}
 
       {tab === "general" && (
         <>
@@ -1607,6 +1905,32 @@ function AdvancedSettings({ onSaved, setMessage, appearance, onAppearanceChange 
         </div>
         <p className="muted">Deixe vazio para usar a pasta padrão do projeto.</p>
         <button className="primary">Salvar configurações</button>
+      </form>
+
+      <form className="form-panel" onSubmit={changePassword}>
+        <h2>Segurança</h2>
+        <div className="form-grid">
+          <Input
+            label="Senha atual"
+            type="password"
+            value={passwordForm.currentPassword}
+            onChange={(currentPassword) => setPasswordForm({ ...passwordForm, currentPassword })}
+          />
+          <Input
+            label="Nova senha"
+            type="password"
+            value={passwordForm.nextPassword}
+            onChange={(nextPassword) => setPasswordForm({ ...passwordForm, nextPassword })}
+          />
+          <Input
+            label="Confirmar nova senha"
+            type="password"
+            value={passwordForm.confirmPassword}
+            onChange={(confirmPassword) => setPasswordForm({ ...passwordForm, confirmPassword })}
+          />
+        </div>
+        <p className="muted">Instalações novas podem entrar com a senha padrão 123456. Altere aqui para uma senha com pelo menos 8 caracteres, letras e números.</p>
+        <button className="primary">Alterar senha</button>
       </form>
 
       <form className="danger-zone" onSubmit={clearBase}>
@@ -1774,6 +2098,7 @@ function DashboardSettings({ appearance, onChange, setMessage }) {
     ["uncategorized", "Sem categoria", "Valor de lançamentos ainda sem categoria."],
     ["withoutSubcategory", "Sem subcategoria", "Valor de lançamentos sem subcategoria."],
     ["transactionCount", "Quantidade", "Total de lançamentos no filtro atual."],
+    ["budgetBalance", "Orçamento livre", "Saldo disponível dos orçamentos ativos."],
   ];
   const chartOptions = [["bar", "Barras verticais"], ["horizontal", "Barras horizontais"], ["line", "Linha"], ["area", "Área"]];
   const topChartOptions = [...chartOptions, ["donut", "Rosca"], ["radial", "Radial"]];
@@ -1932,6 +2257,48 @@ function DashboardSettings({ appearance, onChange, setMessage }) {
   );
 }
 
+function BudgetAlertSettings({ value, onChange, onSave }) {
+  const levels = value?.levels || [50, 75, 95];
+  const setLevel = (index, nextValue) => {
+    const next = [...levels];
+    next[index] = Number(nextValue || 0);
+    onChange({ levels: next });
+  };
+  return (
+    <form className="panel full dashboard-settings-panel" onSubmit={onSave}>
+      <div className="dashboard-settings-head">
+        <PanelTitle icon={Banknote} title="Alertas de Orçamento" />
+        <div className="dashboard-summary">
+          <span>{levels.join("% · ")}%</span>
+        </div>
+      </div>
+      <div className="dashboard-config-section">
+        <div className="dashboard-section-copy">
+          <span>1</span>
+          <div>
+            <strong>Defina os gatilhos de alerta</strong>
+            <p>Quando o gasto realizado alcançar esses percentuais do orçamento, o painel agrava a cor e a mensagem.</p>
+          </div>
+        </div>
+        <div className="dashboard-rule-grid">
+          <Input label="Alerta inicial (%)" type="number" value={levels[0]} onChange={(v) => setLevel(0, v)} />
+          <Input label="Alerta médio (%)" type="number" value={levels[1]} onChange={(v) => setLevel(1, v)} />
+          <Input label="Alerta crítico (%)" type="number" value={levels[2]} onChange={(v) => setLevel(2, v)} />
+        </div>
+      </div>
+      <div className="budget-alert-preview">
+        <div className="budget-alert notice"><strong>{levels[0]}%</strong><span>Atenção ao consumo do orçamento.</span></div>
+        <div className="budget-alert warning"><strong>{levels[1]}%</strong><span>Gasto avançado, vale revisar o ritmo.</span></div>
+        <div className="budget-alert critical"><strong>{levels[2]}%</strong><span>Perto do limite planejado.</span></div>
+        <div className="budget-alert negative"><strong>100%</strong><span>Orçamento negativo a partir daqui.</span></div>
+      </div>
+      <div className="dashboard-save-row">
+        <button className="primary">Salvar alertas</button>
+      </div>
+    </form>
+  );
+}
+
 function NextUpdatesSettings() {
   const cards = [
     {
@@ -2070,8 +2437,15 @@ function ConnectionSettings({ setMessage }) {
 
 function CrudBox({ title, endpoint, rows, fields, blank, onSaved, setMessage }) {
   const [draft, setDraft] = useState(blank);
+  const [search, setSearch] = useState("");
   const [pendingDelete, setPendingDelete] = useState(null);
   const [busyDelete, setBusyDelete] = useState(false);
+  const filteredRows = rows.filter((row) => {
+    const terms = normalizeText(search).split(/\s+/).filter(Boolean);
+    if (!terms.length) return true;
+    const haystack = normalizeText(Object.values(row).join(" "));
+    return terms.every((term) => haystack.includes(term));
+  });
   const saveNew = async (e) => {
     e.preventDefault();
     try {
@@ -2126,12 +2500,17 @@ function CrudBox({ title, endpoint, rows, fields, blank, onSaved, setMessage }) 
         <button className="primary compact"><Save size={16} />Adicionar</button>
       </form>
       <div className="crud-meta">
-        <span>{rows.length} registro(s) cadastrados</span>
+        <label className="crud-search">
+          <span>Buscar em {title.toLowerCase()}</span>
+          <input value={search} placeholder="Digite para filtrar" onChange={(e) => setSearch(e.target.value)} />
+        </label>
+        <span>{filteredRows.length} de {rows.length} registro(s)</span>
       </div>
       <div className="crud-list">
-        {rows.map((row) => (
+        {filteredRows.map((row) => (
           <EditableRow key={row.id} row={row} fields={fields} onSave={saveRow} onDelete={setPendingDelete} />
         ))}
+        {!filteredRows.length && <Empty title="Nenhum cadastro encontrado" />}
       </div>
       <ConfirmDialog
         open={Boolean(pendingDelete)}
@@ -2164,7 +2543,7 @@ function EditableRow({ row, fields, onSave, onDelete }) {
           </select>
         : <input key={key} value={draft[key] ?? ""} aria-label={label} onChange={(e) => setDraft({ ...draft, [key]: e.target.value })} />;
       })}
-      <button type="button" className="icon-button" onClick={() => onSave(draft)} title="Salvar"><Save size={16} /></button>
+      <button type="button" className="save-row-button" onClick={() => onSave(draft)} title="Salvar"><Save size={16} /> Salvar</button>
       <button type="button" className="icon-button danger" onClick={() => onDelete(draft)} title="Remover"><Trash2 size={16} /></button>
     </div>
   );
@@ -2399,6 +2778,67 @@ function SmartSubcategorySelect({ value, onChange, subcategories, label = "Subca
         </div>
       )}
     </label>
+  );
+}
+
+function OfxSubcategorySearch({ value, selectedId, onQueryChange, onSelect, subcategories }) {
+  const [open, setOpen] = useState(false);
+  const terms = normalizeText(value).split(/\s+/).filter(Boolean);
+  const filtered = subcategories
+    .filter((item) => {
+      if (!terms.length) return true;
+      const haystack = normalizeText(`${item.name} ${item.category} ${item.result}`);
+      return terms.every((term) => haystack.includes(term));
+    })
+    .slice(0, 8);
+
+  return (
+    <div className="ofx-custom-search" onBlur={(e) => {
+      if (!e.currentTarget.contains(e.relatedTarget)) setOpen(false);
+    }}>
+      <span>Buscar outra subcategoria</span>
+      <input
+        value={value}
+        placeholder="Digite categoria ou subcategoria"
+        onFocus={() => {
+          if (terms.length) setOpen(true);
+        }}
+        onChange={(e) => {
+          const nextValue = e.target.value;
+          onQueryChange(nextValue);
+          setOpen(Boolean(nextValue.trim()));
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && filtered[0]) {
+            e.preventDefault();
+            onSelect(filtered[0]);
+            setOpen(false);
+          }
+          if (e.key === "Escape") setOpen(false);
+        }}
+      />
+      {open && terms.length > 0 && (
+        <div className="ofx-custom-results">
+          {filtered.length ? filtered.map((item) => (
+            <button
+              type="button"
+              key={item.id}
+              className={Number(selectedId) === Number(item.id) ? "selected" : ""}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                onSelect(item);
+                setOpen(false);
+              }}
+            >
+              <strong>{item.name}</strong>
+              <small>{item.category} · {item.result}</small>
+            </button>
+          )) : (
+            <div>Nenhuma subcategoria encontrada.</div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

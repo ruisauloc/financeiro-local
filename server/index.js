@@ -15,6 +15,7 @@ const seedPath = process.env.FINANCEIRO_SEED_PATH === "none"
   ? ""
   : path.resolve(process.env.FINANCEIRO_SEED_PATH || path.join(root, "seed-from-workbook.json"));
 const defaultAttachmentsDir = path.resolve(process.env.FINANCEIRO_ATTACHMENTS_DIR || path.join(root, "uploads", "attachments"));
+const defaultInstallPassword = String(process.env.FINANCEIRO_DEFAULT_PASSWORD || "").trim();
 const runtimeConfigPath = path.join(root, "runtime-config.json");
 const defaultPorts = { apiPort: 6397, clientPort: 5179 };
 const upload = multer({ storage: multer.memoryStorage() });
@@ -96,6 +97,20 @@ app.post("/api/auth/logout", (req, res) => {
   const token = unpackSession(getCookie(req, "financeiro_session"));
   if (token) sessions.delete(token);
   clearSessionCookie(res);
+  res.json({ ok: true });
+});
+
+app.put("/api/auth/password", (req, res) => {
+  if (!hasPassword()) return res.status(428).json({ error: "Configure a senha inicial." });
+  if (!readSession(req)) return res.status(401).json({ error: "Sessao expirada ou nao autenticada." });
+  const currentPassword = String(req.body.currentPassword || "");
+  const nextPassword = String(req.body.nextPassword || "");
+  if (!verifyPassword(currentPassword)) return res.status(401).json({ error: "Senha atual invalida." });
+  const validation = validatePassword(nextPassword);
+  if (validation) return res.status(400).json({ error: validation });
+  setPassword(nextPassword);
+  sessions.clear();
+  createSession(res);
   res.json({ ok: true });
 });
 
@@ -213,6 +228,17 @@ function initDb() {
       status TEXT NOT NULL DEFAULT 'Ativa',
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
+    CREATE TABLE IF NOT EXISTS budgets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      amount REAL NOT NULL,
+      start_date TEXT NOT NULL,
+      end_date TEXT NOT NULL,
+      category_id INTEGER REFERENCES categories(id),
+      subcategory_id INTEGER REFERENCES subcategories(id),
+      status TEXT NOT NULL DEFAULT 'Ativo',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
     CREATE TABLE IF NOT EXISTS attachments (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       transaction_id INTEGER REFERENCES transactions(id),
@@ -238,6 +264,9 @@ function initDb() {
   migrateColumn("transactions", "installment_total", "INTEGER");
   migrateColumn("transactions", "settled_at", "TEXT");
   migrateColumn("transactions", "settlement_type", "TEXT");
+  migrateColumn("budgets", "category_id", "INTEGER REFERENCES categories(id)");
+  migrateColumn("budgets", "subcategory_id", "INTEGER REFERENCES subcategories(id)");
+  migrateColumn("budgets", "status", "TEXT NOT NULL DEFAULT 'Ativo'");
 }
 
 const one = (sql, params = []) => db.prepare(sql).get(params);
@@ -309,6 +338,13 @@ function setPassword(password) {
   const salt = crypto.randomBytes(16).toString("hex");
   const hash = crypto.pbkdf2Sync(password, salt, 210_000, 32, "sha256").toString("hex");
   setSetting("authPasswordHash", `${salt}:${hash}`);
+}
+
+function ensureDefaultInstallPassword() {
+  if (!defaultInstallPassword || hasPassword()) return;
+  setPassword(defaultInstallPassword);
+  setSetting("defaultInstallPasswordAppliedAt", new Date().toISOString());
+  console.log("Senha inicial aplicada pelo instalador. Altere em Avancado > Geral.");
 }
 
 function verifyPassword(password) {
@@ -389,6 +425,30 @@ function getAppPorts() {
   };
 }
 
+function getBudgetAlertSettings() {
+  try {
+    const saved = JSON.parse(getSetting("budgetAlerts", "{}") || "{}");
+    const levels = Array.isArray(saved.levels) ? saved.levels.map(Number).filter((n) => n > 0 && n <= 100) : [];
+    return { levels: [...new Set(levels.length ? levels : [50, 75, 95])].sort((a, b) => a - b) };
+  } catch {
+    return { levels: [50, 75, 95] };
+  }
+}
+
+function budgetStatus(spent, amount, settings = getBudgetAlertSettings()) {
+  const limit = Math.max(0, Number(amount || 0));
+  const used = limit > 0 ? Math.round((Number(spent || 0) / limit) * 10000) / 100 : 0;
+  const levels = settings.levels || [50, 75, 95];
+  const reached = levels.filter((level) => used >= level).at(-1) || 0;
+  const remaining = limit - Number(spent || 0);
+  let severity = "ok";
+  if (used >= 100) severity = "negative";
+  else if (used >= (levels.at(-1) || 95)) severity = "critical";
+  else if (used >= (levels[1] || 75)) severity = "warning";
+  else if (used >= (levels[0] || 50)) severity = "notice";
+  return { used, remaining, reached, severity };
+}
+
 function seedDb() {
   const count = one("SELECT COUNT(*) AS total FROM categories").total;
   const defaultAccounts = ["Conta Principal"];
@@ -437,6 +497,261 @@ function ensureCoreMappings() {
         END
     WHERE description IN ('Envio para outra conta','Recebimento de outra conta')
   `).run();
+}
+
+function normalizeText(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function findExistingSubcategory(candidates, expectedResult = "") {
+  for (const name of candidates.filter(Boolean)) {
+    const row = one(`
+      SELECT s.*, c.name category_name, c.type result
+      FROM subcategories s
+      JOIN categories c ON c.id=s.category_id
+      WHERE lower(s.name)=lower(?)
+    `, [name]);
+    if (row && (!expectedResult || row.result === expectedResult || expectedResult === "Todos")) return row;
+  }
+  const normalizedCandidates = candidates.map(normalizeText).filter(Boolean);
+  if (!normalizedCandidates.length) return null;
+  const rows = all(`
+    SELECT s.*, c.name category_name, c.type result
+    FROM subcategories s
+    JOIN categories c ON c.id=s.category_id
+  `);
+  const compatibleRows = rows.filter((row) => !expectedResult || row.result === expectedResult || expectedResult === "Todos");
+  for (const candidate of normalizedCandidates) {
+    const exact = compatibleRows.find((row) => normalizeText(row.name) === candidate);
+    if (exact) return exact;
+  }
+  for (const candidate of normalizedCandidates) {
+    const contained = compatibleRows.find((row) => {
+      const rowName = normalizeText(row.name);
+      const haystack = normalizeText(`${row.name} ${row.category_name}`);
+      return haystack.includes(candidate) || candidate.includes(rowName);
+    });
+    if (contained) return contained;
+  }
+  return null;
+}
+
+function ofxMerchantSafe(text) {
+  const raw = String(text || "");
+  const normalized = normalizeText(raw);
+  if (normalized.includes("compra no debito")) {
+    const marker = raw.indexOf("-");
+    if (marker >= 0) return raw.slice(marker + 1).replace(/\s+\d{3,}.*$/g, "").trim();
+  }
+  const pix = raw.match(/pix\s*-\s*(.+?)\s*-/i);
+  if (pix) return pix[1].trim();
+  const transfer = raw.match(/transfer\S*\s+(?:enviada|recebida)(?:\s+pelo\s+pix)?\s*-\s*(.+?)\s*-/i);
+  if (transfer) return transfer[1].trim();
+  return raw.trim();
+}
+
+function classifyOfxTransactionSafe(t) {
+  const text = `${t.note || ""} ${t.type || ""}`;
+  const normalized = normalizeText(text);
+  const amountResult = t.amount >= 0 ? "Receita" : "Despesa";
+  const out = {
+    context: amountResult === "Receita" ? "Entrada" : "Compra comum",
+    confidence: 35,
+    reason: "Sem regra contextual forte.",
+    suggestedResult: amountResult,
+    suggestedCategory: null,
+    suggestedSubcategory: null,
+    suggestedSubcategoryId: null,
+    suggestedCategoryId: null,
+    suggestedNewSubcategory: null,
+    suggestedNewCategory: null,
+    suggestedAction: null,
+    suggestedSubscription: null,
+    existingSubscriptionId: null,
+    apply: false,
+  };
+
+  const applySub = (sub, confidence, context, reason) => {
+    out.context = context;
+    out.confidence = confidence;
+    out.reason = reason;
+    out.suggestedResult = sub.result;
+    out.suggestedCategory = sub.category_name;
+    out.suggestedCategoryId = sub.category_id;
+    out.suggestedSubcategory = sub.name;
+    out.suggestedSubcategoryId = sub.id;
+    out.apply = confidence >= 85;
+    return out;
+  };
+
+  const cls = resolveClassification({ note: t.note, description: t.note, result: amountResult });
+  if (cls.subcategoryId) {
+    const sub = one(`
+      SELECT s.*, c.name category_name, c.type result
+      FROM subcategories s JOIN categories c ON c.id=s.category_id
+      WHERE s.id=?
+    `, [cls.subcategoryId]);
+    if (sub) return applySub(sub, 92, "Regra cadastrada", "Encontrado por regra ou nome exato ja cadastrado.");
+  }
+
+  if (normalized.includes("pagamento de fatura") || normalized.includes("fatura")) {
+    const sub = findExistingSubcategory(["Pagamento de Fatura"], "Fatura") || findExistingSubcategory(["Pagamento de Fatura"], "Despesa");
+    if (sub) return applySub(sub, 96, "Fatura", "Texto indica pagamento de fatura.");
+    out.context = "Fatura";
+    out.confidence = 76;
+    out.suggestedNewSubcategory = "Pagamento de Fatura";
+    out.suggestedNewCategory = "Pagamento de Fatura";
+    out.reason = "Texto indica fatura, mas a subcategoria nao foi encontrada.";
+    return out;
+  }
+
+  if (normalized.includes("transferencia recebida") || normalized.includes("recebida pelo pix") || normalized.includes("credito em conta")) {
+    if (normalized.includes("extorno") || normalized.includes("estorno") || normalized.includes("devolucao")) {
+      const sub = findExistingSubcategory(["Extorno"], "Receb Transf") || findExistingSubcategory(["Outras fontes de renda"], "Receita");
+      if (sub) return applySub(sub, 88, "Extorno recebido", "Texto indica extorno/devolucao recebido.");
+    }
+    const recurring = t.amount > 500;
+    const candidateNames = normalized.includes("priscila")
+      ? ["Salario Priscila", "Salario Conjuge", "Outras fontes de renda", "Recebimento Transferencia"]
+      : normalized.includes("rui saulo") || normalized.includes("rui ")
+        ? ["Salario Rui", "Salario Principal", "Outras fontes de renda", "Recebimento Transferencia"]
+        : recurring
+          ? ["Salario Principal", "Outras fontes de renda", "Recebimento Transferencia"]
+          : ["Recebimento Transferencia", "Recebimento de outra conta", "Outras fontes de renda"];
+    const sub = findExistingSubcategory(candidateNames, "");
+    if (sub) return applySub(sub, recurring ? 78 : 70, recurring ? "Receita recorrente provavel" : "Entrada/receita por transferencia", "Entrada por PIX/TED/DOC ou credito em conta; entra como receita, mas pode precisar confirmacao fina.");
+  }
+
+  if (normalized.includes("transferencia enviada") || normalized.includes("enviada pelo pix")) {
+    const sub = findExistingSubcategory(["Envio para outra conta"], "Envio Transf");
+    if (sub) return applySub(sub, 88, "Saida por transferencia", "PIX/TED/DOC enviado para conta nao cadastrada; tratado como saida/despesa operacional.");
+  }
+
+  const keywordGroups = [
+    { words: ["bahamas", "supermercado", "mercado", "grocery"], subcategories: ["Supermercado"], category: "Alimentacao", context: "Compra comum", confidence: 88 },
+    { words: ["acougue"], subcategories: ["Acougue"], category: "Alimentacao", context: "Compra comum", confidence: 91 },
+    { words: ["drogaria", "farmacia"], subcategories: ["Farmacia", "Medicamentos Farmacia"], category: "Saude", context: "Compra comum", confidence: 91 },
+    { words: ["uber"], subcategories: ["Uber"], category: "Transporte", context: "Compra comum", confidence: 90 },
+    { words: ["taxi"], subcategories: ["Taxi"], category: "Transporte", context: "Compra comum", confidence: 86 },
+    { words: ["posto", "shell", "ipiranga", "combustivel"], subcategories: ["Combustivel"], category: "Transporte", context: "Compra comum", confidence: 86 },
+    { words: ["nic br", "registro br", "dominio"], subcategories: ["Despesas da Empresa", "Outros Empresa"], category: "Empresa", context: "Compra comum", confidence: 72 },
+    { words: ["cacau show"], subcategories: ["Presentes", "Lanches Snacks", "Outros Alimentacao"], category: "Diversos", context: "Compra ambigua", confidence: 62 },
+  ];
+
+  const subscriptionVendors = [
+    { words: ["netflix"], name: "Netflix" },
+    { words: ["amazon prime", "prime video", "primevideo"], name: "Amazon Prime" },
+    { words: ["spotify"], name: "Spotify" },
+    { words: ["disney plus", "disney"], name: "Disney+" },
+    { words: ["max com", "hbo max"], name: "Max" },
+    { words: ["globoplay"], name: "Globoplay" },
+    { words: ["apple com bill", "apple"], name: "Apple" },
+    { words: ["google", "youtube"], name: "Google/YouTube" },
+    { words: ["xbox", "game pass"], name: "Xbox/Game Pass" },
+  ];
+
+  for (const vendor of subscriptionVendors) {
+    if (!vendor.words.some((word) => normalized.includes(normalizeText(word)))) continue;
+    const sub = findExistingSubcategory(["Apps Netflix Spotify Xbox"], "Despesa");
+    const existing = one("SELECT id, name, status FROM subscriptions WHERE lower(name)=lower(?) AND status<>'Cancelada'", [vendor.name]);
+    if (sub) {
+      applySub(sub, 90, "Assinatura", `${vendor.name} parece ser cobranca de assinatura.`);
+      out.suggestedSubscription = vendor.name;
+      out.existingSubscriptionId = existing?.id ?? null;
+      out.suggestedAction = existing ? "Vincular assinatura existente" : "Sugerir criacao de assinatura";
+      return out;
+    }
+    out.context = "Assinatura";
+    out.confidence = 82;
+    out.suggestedNewSubcategory = vendor.name;
+    out.suggestedNewCategory = "Streams / Games";
+    out.suggestedSubscription = vendor.name;
+    out.existingSubscriptionId = existing?.id ?? null;
+    out.suggestedAction = existing ? "Vincular assinatura existente" : "Sugerir criacao de assinatura";
+    out.reason = `${vendor.name} parece ser cobranca recorrente de assinatura.`;
+    return out;
+  }
+
+  for (const group of keywordGroups) {
+    if (!group.words.some((word) => normalized.includes(normalizeText(word)))) continue;
+    const sub = findExistingSubcategory(group.subcategories, amountResult);
+    if (sub) return applySub(sub, group.confidence, group.context, `Palavra-chave contextual: ${group.words[0]}.`);
+    out.context = group.context;
+    out.confidence = Math.min(group.confidence, 74);
+    out.suggestedNewSubcategory = group.subcategories[0];
+    out.suggestedNewCategory = group.category;
+    out.reason = "Ha contexto, mas nao encontrei subcategoria compativel cadastrada.";
+    return out;
+  }
+
+  const merchant = ofxMerchantSafe(text);
+  if (merchant && normalizeText(merchant) !== normalized) {
+    out.suggestedNewSubcategory = merchant.slice(0, 80);
+    out.suggestedNewCategory = amountResult === "Receita" ? "Renda Extra" : "Diversos";
+    out.reason = "Sugestao derivada do favorecido/estabelecimento do OFX, aguardando confirmacao.";
+  }
+
+  return out;
+}
+
+function ofxTransactionKey(t, index) {
+  return t.fitid || `${t.date}:${t.amount}:${normalizeText(t.note).slice(0, 80)}:${index}`;
+}
+
+function ofxSubcategoryOptions(t, suggestion) {
+  const expectedResult = suggestion.suggestedResult || (t.amount >= 0 ? "Receita" : "Despesa");
+  const normalizedText = normalizeText(`${t.note || ""} ${t.type || ""} ${suggestion.suggestedNewSubcategory || ""}`);
+  const tokens = normalizedText.split(" ").filter((token) => token.length >= 3 && !["com", "para", "pelo", "pela", "conta", "agencia", "transferencia", "enviada", "recebida"].includes(token));
+  const rows = all(`
+    SELECT s.id, s.name, c.name category, c.type result
+    FROM subcategories s
+    JOIN categories c ON c.id=s.category_id
+  `);
+  const scored = rows.map((row) => {
+    const haystack = normalizeText(`${row.name} ${row.category}`);
+    const tokenScore = tokens.reduce((sum, token) => sum + (haystack.includes(token) ? 8 : 0), 0);
+    const resultScore = row.result === expectedResult ? 20 : 0;
+    const suggestedScore = suggestion.suggestedSubcategoryId === row.id ? 80 : 0;
+    const categoryScore = suggestion.suggestedCategory && normalizeText(row.category) === normalizeText(suggestion.suggestedCategory) ? 12 : 0;
+    return { ...row, score: suggestedScore + resultScore + categoryScore + tokenScore };
+  }).filter((row) => row.score > 0);
+
+  const seen = new Set();
+  const options = scored
+    .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, "pt-BR"))
+    .filter((row) => {
+      if (seen.has(row.id)) return false;
+      seen.add(row.id);
+      return true;
+    })
+    .slice(0, 3)
+    .map((row) => ({
+      id: row.id,
+      name: row.name,
+      category: row.category,
+      result: row.result,
+      confidence: Math.min(99, Math.max(45, row.score)),
+    }));
+  if (options.length >= 3) return options;
+
+  const fallbackRows = rows
+    .filter((row) => row.result === expectedResult && !seen.has(row.id))
+    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
+    .slice(0, 3 - options.length)
+    .map((row) => ({
+      id: row.id,
+      name: row.name,
+      category: row.category,
+      result: row.result,
+      confidence: 45,
+    }));
+  return [...options, ...fallbackRows];
 }
 
 function resolveClassification(input) {
@@ -724,6 +1039,7 @@ app.get("/api/settings", (_req, res) => {
     defaultAttachmentsDir,
     ports: getAppPorts(),
     appearance: JSON.parse(getSetting("appearance", "{}") || "{}"),
+    budgetAlerts: getBudgetAlertSettings(),
   });
 });
 
@@ -748,6 +1064,11 @@ app.put("/api/settings", (req, res) => {
     setSetting("clientPort", String(ports.clientPort));
     writeRuntimeConfig(ports);
   }
+  if (Object.prototype.hasOwnProperty.call(req.body, "budgetAlerts")) {
+    const levels = (req.body.budgetAlerts?.levels || []).map(Number).filter((n) => n > 0 && n <= 100);
+    if (levels.length < 3) return res.status(400).json({ error: "Informe pelo menos 3 níveis de alerta entre 1 e 100." });
+    setSetting("budgetAlerts", JSON.stringify({ levels: [...new Set(levels)].sort((a, b) => a - b) }));
+  }
   res.json({
     ok: true,
     attachmentsDir: getSetting("attachmentsDir", ""),
@@ -755,6 +1076,7 @@ app.put("/api/settings", (req, res) => {
     defaultAttachmentsDir,
     ports: getAppPorts(),
     appearance: JSON.parse(getSetting("appearance", "{}") || "{}"),
+    budgetAlerts: getBudgetAlertSettings(),
   });
 });
 
@@ -982,6 +1304,69 @@ app.delete("/api/transactions/:id", (req, res) => {
   res.json({ ok: true });
 });
 
+function budgetRows() {
+  const settings = getBudgetAlertSettings();
+  return all(`
+    SELECT b.*, c.name category, s.name subcategory,
+      COALESCE((
+        SELECT SUM(t.amount)
+        FROM transactions t
+        WHERE t.status='Realizado'
+          AND t.result='Despesa'
+          AND date(t.date) BETWEEN date(b.start_date) AND date(b.end_date)
+          AND (b.category_id IS NULL OR t.category_id=b.category_id)
+          AND (b.subcategory_id IS NULL OR t.subcategory_id=b.subcategory_id)
+      ),0) spent
+    FROM budgets b
+    LEFT JOIN categories c ON c.id=b.category_id
+    LEFT JOIN subcategories s ON s.id=b.subcategory_id
+    ORDER BY b.status, b.end_date, b.name
+  `).map((row) => ({ ...row, ...budgetStatus(row.spent, row.amount, settings) }));
+}
+
+app.get("/api/budgets", (_req, res) => {
+  res.json({ alerts: getBudgetAlertSettings(), rows: budgetRows() });
+});
+
+app.post("/api/budgets", (req, res) => {
+  const name = String(req.body.name || "").trim();
+  const amount = Number(req.body.amount || 0);
+  const startDate = normalizeDate(req.body.startDate);
+  const endDate = normalizeDate(req.body.endDate);
+  if (!name || amount <= 0) return res.status(400).json({ error: "Nome e valor do orçamento são obrigatórios." });
+  if (endDate < startDate) return res.status(400).json({ error: "Data final precisa ser maior ou igual à inicial." });
+  const sub = req.body.subcategoryId ? one("SELECT s.id, s.category_id FROM subcategories s WHERE s.id=?", [req.body.subcategoryId]) : null;
+  const categoryId = sub?.category_id || Number(req.body.categoryId || 0) || null;
+  const info = db.prepare(`
+    INSERT INTO budgets(name, amount, start_date, end_date, category_id, subcategory_id, status)
+    VALUES (?,?,?,?,?,?,?)
+  `).run(name, amount, startDate, endDate, categoryId, sub?.id || null, req.body.status || "Ativo");
+  res.status(201).json({ id: info.lastInsertRowid });
+});
+
+app.put("/api/budgets/:id", (req, res) => {
+  const existing = one("SELECT * FROM budgets WHERE id=?", [req.params.id]);
+  if (!existing) return res.status(404).json({ error: "Orçamento não encontrado." });
+  const name = String(req.body.name || existing.name).trim();
+  const amount = Number(req.body.amount || existing.amount);
+  const startDate = normalizeDate(req.body.startDate || existing.start_date);
+  const endDate = normalizeDate(req.body.endDate || existing.end_date);
+  if (!name || amount <= 0) return res.status(400).json({ error: "Nome e valor do orçamento são obrigatórios." });
+  if (endDate < startDate) return res.status(400).json({ error: "Data final precisa ser maior ou igual à inicial." });
+  const sub = req.body.subcategoryId ? one("SELECT s.id, s.category_id FROM subcategories s WHERE s.id=?", [req.body.subcategoryId]) : null;
+  const categoryId = sub?.category_id || Number(req.body.categoryId || 0) || null;
+  db.prepare(`
+    UPDATE budgets SET name=?, amount=?, start_date=?, end_date=?, category_id=?, subcategory_id=?, status=?
+    WHERE id=?
+  `).run(name, amount, startDate, endDate, categoryId, sub?.id || null, req.body.status || existing.status, req.params.id);
+  res.json({ ok: true });
+});
+
+app.delete("/api/budgets/:id", (req, res) => {
+  db.prepare("DELETE FROM budgets WHERE id=?").run(req.params.id);
+  res.json({ ok: true });
+});
+
 app.get("/api/summary", (req, res) => {
   const period = buildPeriodFilter(req.query, "date");
   const periodT = buildPeriodFilter(req.query, "t.date");
@@ -1046,7 +1431,16 @@ app.get("/api/summary", (req, res) => {
     GROUP BY c.id
     ORDER BY c.dashboard_order, c.name
   `, periodT.params);
-  res.json({ totals, monthly, byCategory, bySubcategory, balances, future, dashboardCategories });
+  const activeBudgets = budgetRows().filter((row) => row.status === "Ativo");
+  const budgetAlerts = activeBudgets.filter((row) => row.severity !== "ok");
+  const budgetSummary = activeBudgets.reduce((acc, row) => {
+    acc.total += Number(row.amount || 0);
+    acc.spent += Number(row.spent || 0);
+    return acc;
+  }, { total: 0, spent: 0 });
+  budgetSummary.remaining = budgetSummary.total - budgetSummary.spent;
+  budgetSummary.used = budgetSummary.total > 0 ? Math.round((budgetSummary.spent / budgetSummary.total) * 10000) / 100 : 0;
+  res.json({ totals, monthly, byCategory, bySubcategory, balances, future, dashboardCategories, budgets: { ...budgetSummary, alerts: budgetAlerts, items: activeBudgets } });
 });
 
 function buildPeriodFilter(query, column = "date") {
@@ -1357,12 +1751,29 @@ app.post("/api/ofx/import", upload.single("file"), (req, res) => {
   const transactions = parseOfx(text);
   if (!transactions.length) return res.status(400).json({ error: "Nenhuma transação OFX encontrada." });
 
+  let overrides = {};
+  try {
+    overrides = req.body.overrides ? JSON.parse(req.body.overrides) : {};
+  } catch {
+    return res.status(400).json({ error: "Sugestões OFX inválidas." });
+  }
+
   const dates = transactions.map((t) => t.date).sort();
   let inserted = 0;
   const run = db.transaction(() => {
-    for (const t of transactions) {
+    for (const [index, t] of transactions.entries()) {
       if (t.fitid && one("SELECT id FROM transactions WHERE fitid=?", [t.fitid])) continue;
-      const result = t.amount >= 0 ? "Receita" : "Despesa";
+      const suggestion = classifyOfxTransactionSafe(t);
+      const selectedSubcategoryId = Number(overrides[ofxTransactionKey(t, index)] || 0);
+      const selected = selectedSubcategoryId
+        ? one(`
+          SELECT s.id subcategoryId, c.id categoryId, c.type result
+          FROM subcategories s
+          JOIN categories c ON c.id=s.category_id
+          WHERE s.id=?
+        `, [selectedSubcategoryId])
+        : null;
+      const result = selected?.result || (suggestion.apply ? suggestion.suggestedResult : t.amount >= 0 ? "Receita" : "Despesa");
       createTransaction({
         date: t.date,
         description: t.note || t.type || "OFX",
@@ -1371,6 +1782,8 @@ app.post("/api/ofx/import", upload.single("file"), (req, res) => {
         status: "Realizado",
         note: t.note,
         result,
+        subcategoryId: selected?.subcategoryId || (suggestion.apply ? suggestion.suggestedSubcategoryId : null),
+        categoryId: selected?.categoryId || (suggestion.apply ? suggestion.suggestedCategoryId : null),
         source: "ofx",
         fitid: t.fitid,
       });
@@ -1388,18 +1801,36 @@ app.post("/api/ofx/preview", upload.single("file"), (req, res) => {
   const hash = crypto.createHash("sha256").update(req.file.buffer).digest("hex");
   const duplicateFile = Boolean(one("SELECT id FROM ofx_imports WHERE file_hash=?", [hash]));
   const text = decodeOfxBuffer(req.file.buffer);
-  const transactions = parseOfx(text).map((t) => {
+  const transactions = parseOfx(text).map((t, index) => {
     const duplicate = t.fitid ? Boolean(one("SELECT id FROM transactions WHERE fitid=?", [t.fitid])) : false;
-    const cls = resolveClassification({ note: t.note, description: t.note });
+    const suggestion = classifyOfxTransactionSafe(t);
     return {
       ...t,
+      key: ofxTransactionKey(t, index),
       amountAbs: Math.abs(t.amount),
       direction: t.amount >= 0 ? "Entrada" : "Saída",
       duplicate,
-      suggestedCategory: cls.category,
-      suggestedResult: cls.result || (t.amount >= 0 ? "Receita" : "Despesa"),
+      suggestedContext: suggestion.context,
+      suggestedCategory: suggestion.suggestedCategory,
+      suggestedSubcategory: suggestion.suggestedSubcategory,
+      suggestedNewCategory: suggestion.suggestedNewCategory,
+      suggestedNewSubcategory: suggestion.suggestedNewSubcategory,
+      suggestedResult: suggestion.suggestedResult,
+      suggestionConfidence: suggestion.confidence,
+      suggestionReason: suggestion.reason,
+      suggestedAction: suggestion.suggestedAction,
+      suggestedSubscription: suggestion.suggestedSubscription,
+      existingSubscriptionId: suggestion.existingSubscriptionId,
+      willApplySuggestion: suggestion.apply,
+      suggestionOptions: ofxSubcategoryOptions(t, suggestion),
     };
   });
+  const suggestionSummary = transactions.reduce((acc, t) => {
+    if (t.willApplySuggestion) acc.auto++;
+    else if (t.suggestedSubcategory || t.suggestedNewSubcategory) acc.review++;
+    else acc.empty++;
+    return acc;
+  }, { auto: 0, review: 0, empty: 0 });
   const dates = transactions.map((t) => t.date).sort();
   res.json({
     filename: req.file.originalname,
@@ -1410,6 +1841,7 @@ app.post("/api/ofx/preview", upload.single("file"), (req, res) => {
     count: transactions.length,
     totalCredits: transactions.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0),
     totalDebits: transactions.filter((t) => t.amount < 0).reduce((s, t) => s + t.amount, 0),
+    suggestionSummary,
     transactions,
   });
 });
@@ -1423,6 +1855,7 @@ const portableTables = [
   "card_payments",
   "installment_groups",
   "subscriptions",
+  "budgets",
   "attachments",
   "rule_map",
   "app_settings",
@@ -1492,6 +1925,7 @@ function dbSchemaSql() {
     CREATE TABLE IF NOT EXISTS card_payments (id INTEGER PRIMARY KEY AUTOINCREMENT, paid_at TEXT NOT NULL, card_id INTEGER, account_id INTEGER, period_month INTEGER NOT NULL, period_year INTEGER NOT NULL, amount REAL NOT NULL, transaction_id INTEGER);
     CREATE TABLE IF NOT EXISTS installment_groups (id TEXT PRIMARY KEY, description TEXT NOT NULL, principal_total REAL NOT NULL DEFAULT 0, installment_amount REAL NOT NULL DEFAULT 0, installments_count INTEGER NOT NULL DEFAULT 1, interest_total REAL NOT NULL DEFAULT 0, institution_id INTEGER, subcategory_id INTEGER, first_date TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'Aberto', created_at TEXT);
     CREATE TABLE IF NOT EXISTS subscriptions (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, category_id INTEGER, subcategory_id INTEGER, institution_id INTEGER, billing_cycle TEXT NOT NULL, amount REAL NOT NULL, renewal_date TEXT, next_due_date TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'Ativa', created_at TEXT);
+    CREATE TABLE IF NOT EXISTS budgets (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, amount REAL NOT NULL, start_date TEXT NOT NULL, end_date TEXT NOT NULL, category_id INTEGER, subcategory_id INTEGER, status TEXT NOT NULL DEFAULT 'Ativo', created_at TEXT);
     CREATE TABLE IF NOT EXISTS attachments (id INTEGER PRIMARY KEY AUTOINCREMENT, transaction_id INTEGER, installment_group_id TEXT, subscription_id INTEGER, kind TEXT NOT NULL DEFAULT 'file', original_name TEXT NOT NULL, stored_name TEXT NOT NULL, mime_type TEXT, size INTEGER NOT NULL DEFAULT 0, created_at TEXT);
     CREATE TABLE IF NOT EXISTS rule_map (id INTEGER PRIMARY KEY AUTOINCREMENT, pattern TEXT UNIQUE NOT NULL, subcategory_id INTEGER, priority INTEGER NOT NULL DEFAULT 50);
     CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT);
@@ -1577,6 +2011,7 @@ async function createSqlServerSchema(pool) {
     IF OBJECT_ID('card_payments','U') IS NULL CREATE TABLE card_payments (id INT PRIMARY KEY, paid_at NVARCHAR(30), card_id INT, account_id INT, period_month INT, period_year INT, amount FLOAT, transaction_id INT);
     IF OBJECT_ID('installment_groups','U') IS NULL CREATE TABLE installment_groups (id NVARCHAR(100) PRIMARY KEY, description NVARCHAR(500), principal_total FLOAT, installment_amount FLOAT, installments_count INT, interest_total FLOAT, institution_id INT, subcategory_id INT, first_date NVARCHAR(30), status NVARCHAR(80), created_at NVARCHAR(40));
     IF OBJECT_ID('subscriptions','U') IS NULL CREATE TABLE subscriptions (id INT PRIMARY KEY, name NVARCHAR(255), category_id INT, subcategory_id INT, institution_id INT, billing_cycle NVARCHAR(40), amount FLOAT, renewal_date NVARCHAR(30), next_due_date NVARCHAR(30), status NVARCHAR(80), created_at NVARCHAR(40));
+    IF OBJECT_ID('budgets','U') IS NULL CREATE TABLE budgets (id INT PRIMARY KEY, name NVARCHAR(255), amount FLOAT, start_date NVARCHAR(30), end_date NVARCHAR(30), category_id INT, subcategory_id INT, status NVARCHAR(80), created_at NVARCHAR(40));
     IF OBJECT_ID('attachments','U') IS NULL CREATE TABLE attachments (id INT PRIMARY KEY, transaction_id INT, installment_group_id NVARCHAR(100), subscription_id INT, kind NVARCHAR(40), original_name NVARCHAR(500), stored_name NVARCHAR(500), mime_type NVARCHAR(255), size INT, created_at NVARCHAR(40));
     IF OBJECT_ID('rule_map','U') IS NULL CREATE TABLE rule_map (id INT PRIMARY KEY, pattern NVARCHAR(500), subcategory_id INT, priority INT);
     IF OBJECT_ID('app_settings','U') IS NULL CREATE TABLE app_settings ([key] NVARCHAR(255) PRIMARY KEY, value NVARCHAR(MAX));
@@ -1598,10 +2033,15 @@ app.get("/api/mapping", (_req, res) => {
 });
 
 initDb();
+ensureDefaultInstallPassword();
 seedDb();
 ensureCoreMappings();
 
 const activeApiPort = normalizePort(process.env.PORT || getSetting("apiPort", "") || loadRuntimeConfig().apiPort, defaultPorts.apiPort);
+if (process.env.FINANCEIRO_BOOTSTRAP_PASSWORD_ONLY === "1") {
+  db.close();
+  process.exit(0);
+}
 app.listen(activeApiPort, "0.0.0.0", () => {
   console.log(`Financeiro API em http://0.0.0.0:${activeApiPort}`);
 });
