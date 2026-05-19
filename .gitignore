@@ -1,7 +1,9 @@
 # Dependencias e build
 node_modules/
 dist/
-release/
+release/*
+!release/Financeiro Local 1.0.2.exe
+!release/Financeiro Local Setup 1.0.2.exe
 .vite/
 tmp/
 
