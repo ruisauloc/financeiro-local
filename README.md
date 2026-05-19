@@ -84,7 +84,7 @@ O projeto também pode ser gerado como aplicativo desktop com Electron:
 - Linux: `.AppImage` e `.deb`.
 - macOS: `.dmg` e `.zip`.
 
-Os executáveis ficam disponíveis em **GitHub Actions** como artifacts quando o workflow `Build executables` é executado manualmente. Ao criar uma tag `v*`, por exemplo `v1.0.1`, o workflow também publica os arquivos em **GitHub Releases**.
+Os executáveis ficam disponíveis em **GitHub Releases** quando uma tag `v*` é criada, por exemplo `v1.0.2`. O workflow `Build executables` também guarda os arquivos em **GitHub Actions** como artifacts.
 
 Arquivos `.exe`, `.dmg`, `.AppImage` e `.deb` não são versionados diretamente no Git porque passam facilmente de 100 MB. O repositório contém a configuração que gera esses instaladores de forma reproduzível.
 
@@ -106,91 +106,27 @@ No app desktop, a senha inicial também é:
 
 Os dados do app desktop ficam na pasta local de dados do usuário do sistema operacional, não dentro da pasta do executável.
 
-A versão `1.0.1` já nasce com uma base inicial de cadastros sanitizada:
+A versão `1.0.2` já nasce com uma base inicial de cadastros sanitizada:
 
 - Categorias, subcategorias e contas/cartões atuais.
 - Sem lançamentos, OFX, anexos, assinaturas ou orçamentos.
 - Com filtro aplicado para remover nomes pessoais sensíveis antes do empacotamento.
 
-### Windows
+### Baixar instaladores
 
-Instale:
+Baixe a versão mais recente em:
 
-- [Git for Windows](https://git-scm.com/download/win)
-- [Node.js LTS](https://nodejs.org/)
-
-Depois rode no PowerShell:
-
-```powershell
-git clone https://github.com/ruisauloc/financeiro-local.git
-cd financeiro-local
-powershell -ExecutionPolicy Bypass -File .\installers\install-windows.ps1
-npm run dev
+```text
+https://github.com/ruisauloc/financeiro-local/releases
 ```
 
-Atalho para iniciar depois:
+Arquivos esperados por sistema:
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\installers\start-windows.ps1
-```
+- Windows: `Financeiro Local Setup x.y.z.exe` ou `Financeiro Local x.y.z.exe`.
+- Linux: `.AppImage` ou `.deb`.
+- macOS: `.dmg` ou `.zip`.
 
-Se o `npm install` falhar ao compilar dependências nativas, instale o Visual Studio Build Tools com o componente de C++ para desktop.
-
-### Linux
-
-Ubuntu/Debian:
-
-```bash
-sudo apt update
-sudo apt install -y git nodejs npm build-essential python3
-git clone https://github.com/ruisauloc/financeiro-local.git
-cd financeiro-local
-chmod +x installers/*.sh
-./installers/install-linux.sh
-npm run dev
-```
-
-Fedora/RHEL:
-
-```bash
-sudo dnf install -y git nodejs npm gcc-c++ make python3
-git clone https://github.com/ruisauloc/financeiro-local.git
-cd financeiro-local
-chmod +x installers/*.sh
-./installers/install-linux.sh
-npm run dev
-```
-
-Atalho para iniciar depois:
-
-```bash
-./installers/start-linux.sh
-```
-
-### macOS
-
-Com Homebrew:
-
-```bash
-brew install git node
-git clone https://github.com/ruisauloc/financeiro-local.git
-cd financeiro-local
-chmod +x installers/*.sh
-./installers/install-macos.sh
-npm run dev
-```
-
-Se o macOS pedir ferramentas de compilação:
-
-```bash
-xcode-select --install
-```
-
-Atalho para iniciar depois:
-
-```bash
-./installers/start-macos.sh
-```
+Os scripts antigos da pasta `installers/` foram removidos. A instalação distribuída agora é feita pelos executáveis gerados pelo workflow.
 
 ## Instalação manual
 

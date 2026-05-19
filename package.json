@@ -1,6 +1,6 @@
 {
   "name": "financeiro",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Sistema financeiro web local migrado da planilha XLSM.",
   "main": "electron/main.cjs",
   "scripts": {

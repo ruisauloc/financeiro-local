@@ -1716,6 +1716,8 @@ function AdvancedSettings({ onSaved, setMessage, appearance, onAppearanceChange 
     attachmentsDir: "",
     effectiveAttachmentsDir: "",
     defaultAttachmentsDir: "",
+    sqlitePath: "",
+    dataRoot: "",
     ports: { apiPort: 6397, clientPort: 5179, activeApiPort: 6397, restartRequired: false },
     appearance: mergeAppearance(appearance),
     budgetAlerts: { levels: [50, 75, 95] },
@@ -1918,6 +1920,18 @@ function AdvancedSettings({ onSaved, setMessage, appearance, onAppearanceChange 
         </div>
         <p className="muted">As portas são aplicadas depois de reiniciar o app. Use valores entre 1024 e 65535 e mantenha API e interface em portas diferentes.</p>
 
+        <h2>Base local</h2>
+        <div className="form-grid">
+          <div className="path-info wide-field">
+            <span>Arquivo SQLite em uso</span>
+            <strong>{settings.sqlitePath || "financeiro.sqlite"}</strong>
+          </div>
+          <div className="path-info wide-field">
+            <span>Pasta de dados padrão</span>
+            <strong>{settings.dataRoot || "Pasta do projeto/app"}</strong>
+          </div>
+        </div>
+
         <h2>Pasta de anexos</h2>
         <div className="form-grid">
           <Input
@@ -1929,6 +1943,10 @@ function AdvancedSettings({ onSaved, setMessage, appearance, onAppearanceChange 
           <div className="path-info">
             <span>Pasta em uso</span>
             <strong>{settings.effectiveAttachmentsDir || settings.defaultAttachmentsDir}</strong>
+          </div>
+          <div className="path-info wide-field">
+            <span>Pasta padrão de anexos</span>
+            <strong>{settings.defaultAttachmentsDir}</strong>
           </div>
         </div>
         <p className="muted">Deixe vazio para usar a pasta padrão do projeto.</p>
