@@ -106,6 +106,12 @@ No app desktop, a senha inicial também é:
 
 Os dados do app desktop ficam na pasta local de dados do usuário do sistema operacional, não dentro da pasta do executável.
 
+A versão `1.0.1` já nasce com uma base inicial de cadastros sanitizada:
+
+- Categorias, subcategorias e contas/cartões atuais.
+- Sem lançamentos, OFX, anexos, assinaturas ou orçamentos.
+- Com filtro aplicado para remover nomes pessoais sensíveis antes do empacotamento.
+
 ### Windows
 
 Instale:

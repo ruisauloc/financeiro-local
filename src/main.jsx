@@ -1813,6 +1813,7 @@ function AdvancedSettings({ onSaved, setMessage, appearance, onAppearanceChange 
     <div className="advanced-grid">
       <div className="advanced-tabs">
         <button className={tab === "general" ? "active" : ""} onClick={() => setTab("general")}>Geral</button>
+        <button className={tab === "security" ? "active" : ""} onClick={() => setTab("security")}>Segurança</button>
         <button className={tab === "connections" ? "active" : ""} onClick={() => setTab("connections")}>Conexões</button>
         <button className={tab === "appearance" ? "active" : ""} onClick={() => setTab("appearance")}>Personalização</button>
         <button className={tab === "dashboards" ? "active" : ""} onClick={() => setTab("dashboards")}>Dashboards</button>
@@ -1852,6 +1853,33 @@ function AdvancedSettings({ onSaved, setMessage, appearance, onAppearanceChange 
           onChange={(budgetAlerts) => setSettings({ ...settings, budgetAlerts })}
           onSave={saveSettings}
         />
+      )}
+      {tab === "security" && (
+        <form className="form-panel full" onSubmit={changePassword}>
+          <h2>Trocar senha</h2>
+          <div className="form-grid">
+            <Input
+              label="Senha atual"
+              type="password"
+              value={passwordForm.currentPassword}
+              onChange={(currentPassword) => setPasswordForm({ ...passwordForm, currentPassword })}
+            />
+            <Input
+              label="Nova senha"
+              type="password"
+              value={passwordForm.nextPassword}
+              onChange={(nextPassword) => setPasswordForm({ ...passwordForm, nextPassword })}
+            />
+            <Input
+              label="Confirmar nova senha"
+              type="password"
+              value={passwordForm.confirmPassword}
+              onChange={(confirmPassword) => setPasswordForm({ ...passwordForm, confirmPassword })}
+            />
+          </div>
+          <p className="muted">Instalações novas podem entrar com a senha padrão 123456. Altere aqui para uma senha com pelo menos 8 caracteres, letras e números.</p>
+          <button className="primary">Alterar senha</button>
+        </form>
       )}
 
       {tab === "general" && (
@@ -1905,32 +1933,6 @@ function AdvancedSettings({ onSaved, setMessage, appearance, onAppearanceChange 
         </div>
         <p className="muted">Deixe vazio para usar a pasta padrão do projeto.</p>
         <button className="primary">Salvar configurações</button>
-      </form>
-
-      <form className="form-panel" onSubmit={changePassword}>
-        <h2>Segurança</h2>
-        <div className="form-grid">
-          <Input
-            label="Senha atual"
-            type="password"
-            value={passwordForm.currentPassword}
-            onChange={(currentPassword) => setPasswordForm({ ...passwordForm, currentPassword })}
-          />
-          <Input
-            label="Nova senha"
-            type="password"
-            value={passwordForm.nextPassword}
-            onChange={(nextPassword) => setPasswordForm({ ...passwordForm, nextPassword })}
-          />
-          <Input
-            label="Confirmar nova senha"
-            type="password"
-            value={passwordForm.confirmPassword}
-            onChange={(confirmPassword) => setPasswordForm({ ...passwordForm, confirmPassword })}
-          />
-        </div>
-        <p className="muted">Instalações novas podem entrar com a senha padrão 123456. Altere aqui para uma senha com pelo menos 8 caracteres, letras e números.</p>
-        <button className="primary">Alterar senha</button>
       </form>
 
       <form className="danger-zone" onSubmit={clearBase}>

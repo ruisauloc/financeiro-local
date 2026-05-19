@@ -1,0 +1,812 @@
+{
+  "version": 1,
+  "generatedAt": "2026-05-19T00:41:25.959Z",
+  "source": "current-cadastros-sanitized",
+  "sanitized": {
+    "personalNameFilterApplied": true,
+    "includesTransactions": false,
+    "includesAttachments": false
+  },
+  "categories": [
+    {
+      "name": "Alguel Inquilino",
+      "type": "Receita",
+      "showOnDashboard": 0,
+      "dashboardOrder": 0
+    },
+    {
+      "name": "Alimentação",
+      "type": "Despesa",
+      "showOnDashboard": 0,
+      "dashboardOrder": 0
+    },
+    {
+      "name": "Comunicação",
+      "type": "Despesa",
+      "showOnDashboard": 0,
+      "dashboardOrder": 0
+    },
+    {
+      "name": "Dependentes",
+      "type": "Despesa",
+      "showOnDashboard": 0,
+      "dashboardOrder": 0
+    },
+    {
+      "name": "Diversos",
+      "type": "Despesa",
+      "showOnDashboard": 0,
+      "dashboardOrder": 0
+    },
+    {
+      "name": "Educação",
+      "type": "Despesa",
+      "showOnDashboard": 0,
+      "dashboardOrder": 0
+    },
+    {
+      "name": "Empresa",
+      "type": "Despesa",
+      "showOnDashboard": 0,
+      "dashboardOrder": 0
+    },
+    {
+      "name": "Empréstimo",
+      "type": "Despesa",
+      "showOnDashboard": 0,
+      "dashboardOrder": 0
+    },
+    {
+      "name": "Envio Transf",
+      "type": "Despesa",
+      "showOnDashboard": 0,
+      "dashboardOrder": 0
+    },
+    {
+      "name": "Financiamento",
+      "type": "Despesa",
+      "showOnDashboard": 0,
+      "dashboardOrder": 0
+    },
+    {
+      "name": "Investimentos",
+      "type": "Despesa",
+      "showOnDashboard": 0,
+      "dashboardOrder": 0
+    },
+    {
+      "name": "Lazer",
+      "type": "Despesa",
+      "showOnDashboard": 0,
+      "dashboardOrder": 0
+    },
+    {
+      "name": "Moradia",
+      "type": "Despesa",
+      "showOnDashboard": 0,
+      "dashboardOrder": 0
+    },
+    {
+      "name": "Outras Fontes Renda",
+      "type": "Receita",
+      "showOnDashboard": 0,
+      "dashboardOrder": 0
+    },
+    {
+      "name": "Outros Seguros",
+      "type": "Despesa",
+      "showOnDashboard": 0,
+      "dashboardOrder": 0
+    },
+    {
+      "name": "Pagamento de Fatura",
+      "type": "Despesa",
+      "showOnDashboard": 0,
+      "dashboardOrder": 0
+    },
+    {
+      "name": "Pessoais",
+      "type": "Despesa",
+      "showOnDashboard": 0,
+      "dashboardOrder": 0
+    },
+    {
+      "name": "Previdência",
+      "type": "Despesa",
+      "showOnDashboard": 0,
+      "dashboardOrder": 0
+    },
+    {
+      "name": "Receb Transf",
+      "type": "Receita",
+      "showOnDashboard": 0,
+      "dashboardOrder": 0
+    },
+    {
+      "name": "Renda Cônjuge",
+      "type": "Receita",
+      "showOnDashboard": 0,
+      "dashboardOrder": 0
+    },
+    {
+      "name": "Renda Extra",
+      "type": "Receita",
+      "showOnDashboard": 0,
+      "dashboardOrder": 0
+    },
+    {
+      "name": "Renda Principal",
+      "type": "Receita",
+      "showOnDashboard": 0,
+      "dashboardOrder": 0
+    },
+    {
+      "name": "Saúde",
+      "type": "Despesa",
+      "showOnDashboard": 0,
+      "dashboardOrder": 0
+    },
+    {
+      "name": "Seguro De Vida",
+      "type": "Despesa",
+      "showOnDashboard": 0,
+      "dashboardOrder": 0
+    },
+    {
+      "name": "Serviços Financeiros",
+      "type": "Despesa",
+      "showOnDashboard": 0,
+      "dashboardOrder": 0
+    },
+    {
+      "name": "Streams / Games",
+      "type": "Despesa",
+      "showOnDashboard": 0,
+      "dashboardOrder": 0
+    },
+    {
+      "name": "Telefonia",
+      "type": "Despesa",
+      "showOnDashboard": 0,
+      "dashboardOrder": 0
+    },
+    {
+      "name": "Transporte",
+      "type": "Despesa",
+      "showOnDashboard": 0,
+      "dashboardOrder": 0
+    },
+    {
+      "name": "trasnf",
+      "type": "Despesa",
+      "showOnDashboard": 0,
+      "dashboardOrder": 0
+    }
+  ],
+  "subcategories": [
+    {
+      "name": "13º Salário Cônjuge",
+      "category": "Renda Cônjuge"
+    },
+    {
+      "name": "13º Salário Principal",
+      "category": "Renda Principal"
+    },
+    {
+      "name": "Academia / Esportes",
+      "category": "Pessoais"
+    },
+    {
+      "name": "Academia / Esportes Dependentes",
+      "category": "Dependentes"
+    },
+    {
+      "name": "Aluguel",
+      "category": "Moradia"
+    },
+    {
+      "name": "Animais de estimação",
+      "category": "Diversos"
+    },
+    {
+      "name": "Anuidade Cartão Crédito",
+      "category": "Serviços Financeiros"
+    },
+    {
+      "name": "Aplicação para Reserva",
+      "category": "Investimentos"
+    },
+    {
+      "name": "Aposentadoria INSS",
+      "category": "Renda Extra"
+    },
+    {
+      "name": "Apps (Netflix, Spotify, Xbox, etc)",
+      "category": "Streams / Games"
+    },
+    {
+      "name": "Assessoria Contábil",
+      "category": "Empresa"
+    },
+    {
+      "name": "Auxílio para amigos",
+      "category": "Dependentes"
+    },
+    {
+      "name": "Auxílio para parentes",
+      "category": "Dependentes"
+    },
+    {
+      "name": "Açougue",
+      "category": "Alimentação"
+    },
+    {
+      "name": "Bares e Restaurantes",
+      "category": "Lazer"
+    },
+    {
+      "name": "Bônus Cônjuge",
+      "category": "Renda Cônjuge"
+    },
+    {
+      "name": "Bônus Principal",
+      "category": "Renda Principal"
+    },
+    {
+      "name": "Capital de Giro",
+      "category": "Empresa"
+    },
+    {
+      "name": "Cinema / Teatro / Shows",
+      "category": "Lazer"
+    },
+    {
+      "name": "Clubes / Parques",
+      "category": "Lazer"
+    },
+    {
+      "name": "Colégio",
+      "category": "Educação"
+    },
+    {
+      "name": "Combo (TV + Internet + Tel)",
+      "category": "Comunicação"
+    },
+    {
+      "name": "Combustível",
+      "category": "Transporte"
+    },
+    {
+      "name": "Condomínio",
+      "category": "Moradia"
+    },
+    {
+      "name": "Consórcios",
+      "category": "Financiamento"
+    },
+    {
+      "name": "Cursos (idiomas, música, teatro, etc.)",
+      "category": "Dependentes"
+    },
+    {
+      "name": "Cursos de Extensão",
+      "category": "Educação"
+    },
+    {
+      "name": "Custos com Imóveis de Veraneio",
+      "category": "Moradia"
+    },
+    {
+      "name": "Custos com Imóveis não Alugados",
+      "category": "Moradia"
+    },
+    {
+      "name": "DAS",
+      "category": "Empresa"
+    },
+    {
+      "name": "Dentista",
+      "category": "Saúde"
+    },
+    {
+      "name": "Despesas da Empresa",
+      "category": "Empresa"
+    },
+    {
+      "name": "DIT / Doenças graves",
+      "category": "Outros Seguros"
+    },
+    {
+      "name": "Doações",
+      "category": "Diversos"
+    },
+    {
+      "name": "Educação (colégio, faculdade)",
+      "category": "Dependentes"
+    },
+    {
+      "name": "Empréstimo Pessoal - Banco",
+      "category": "Empréstimo"
+    },
+    {
+      "name": "Empréstimo Pessoal - Família",
+      "category": "Empréstimo"
+    },
+    {
+      "name": "Empréstimo Pessoal - Outros",
+      "category": "Empréstimo"
+    },
+    {
+      "name": "Encargos Financeiros",
+      "category": "Empréstimo"
+    },
+    {
+      "name": "Energia Elétrica",
+      "category": "Moradia"
+    },
+    {
+      "name": "Entreterimento",
+      "category": "Pessoais"
+    },
+    {
+      "name": "Envio para outra conta",
+      "category": "Envio Transf"
+    },
+    {
+      "name": "Estacionamento",
+      "category": "Transporte"
+    },
+    {
+      "name": "Estética",
+      "category": "Pessoais"
+    },
+    {
+      "name": "Extorno",
+      "category": "Receb Transf"
+    },
+    {
+      "name": "Farmácia",
+      "category": "Saúde"
+    },
+    {
+      "name": "Feira",
+      "category": "Alimentação"
+    },
+    {
+      "name": "Financiamento Automóvel",
+      "category": "Financiamento"
+    },
+    {
+      "name": "Financiamento Imóvel",
+      "category": "Financiamento"
+    },
+    {
+      "name": "Financiamento Outros Bens",
+      "category": "Financiamento"
+    },
+    {
+      "name": "Férias Bruto Cônjuge",
+      "category": "Renda Cônjuge"
+    },
+    {
+      "name": "Férias Bruto Principal",
+      "category": "Renda Principal"
+    },
+    {
+      "name": "Graduação",
+      "category": "Educação"
+    },
+    {
+      "name": "Gás",
+      "category": "Moradia"
+    },
+    {
+      "name": "Higiene pessoal",
+      "category": "Pessoais"
+    },
+    {
+      "name": "Horas extras / Comissões Cônjuge",
+      "category": "Renda Cônjuge"
+    },
+    {
+      "name": "Horas extras / Comissões Principal",
+      "category": "Renda Principal"
+    },
+    {
+      "name": "Idiomas",
+      "category": "Educação"
+    },
+    {
+      "name": "Internet",
+      "category": "Telefonia"
+    },
+    {
+      "name": "IPTU",
+      "category": "Moradia"
+    },
+    {
+      "name": "IPVA",
+      "category": "Transporte"
+    },
+    {
+      "name": "Juros Cartão de Crédito",
+      "category": "Empréstimo"
+    },
+    {
+      "name": "Juros Cheque Especial",
+      "category": "Empréstimo"
+    },
+    {
+      "name": "Lanches & Snacks",
+      "category": "Alimentação"
+    },
+    {
+      "name": "Lavagem / Higienização",
+      "category": "Transporte"
+    },
+    {
+      "name": "Lavanderia",
+      "category": "Pessoais"
+    },
+    {
+      "name": "Licenciamento",
+      "category": "Transporte"
+    },
+    {
+      "name": "Livros / Revistas / Jornais / CDs",
+      "category": "Lazer"
+    },
+    {
+      "name": "Loteria / Capitalização",
+      "category": "Diversos"
+    },
+    {
+      "name": "Manutenção",
+      "category": "Transporte"
+    },
+    {
+      "name": "Material de Limpeza",
+      "category": "Moradia"
+    },
+    {
+      "name": "Medicamentos / Farmácia",
+      "category": "Saúde"
+    },
+    {
+      "name": "Mesada",
+      "category": "Dependentes"
+    },
+    {
+      "name": "Multas",
+      "category": "Transporte"
+    },
+    {
+      "name": "Outras Consultas Fora do Plano",
+      "category": "Saúde"
+    },
+    {
+      "name": "Outras fontes de renda",
+      "category": "Renda Extra"
+    },
+    {
+      "name": "Outros Alimentação",
+      "category": "Alimentação"
+    },
+    {
+      "name": "Outros Comunicação",
+      "category": "Comunicação"
+    },
+    {
+      "name": "Outros Dependentes",
+      "category": "Dependentes"
+    },
+    {
+      "name": "Outros Diversos",
+      "category": "Diversos"
+    },
+    {
+      "name": "Outros Educação",
+      "category": "Educação"
+    },
+    {
+      "name": "Outros Empresa",
+      "category": "Empresa"
+    },
+    {
+      "name": "Outros Empréstimo",
+      "category": "Empréstimo"
+    },
+    {
+      "name": "Outros Financeiros",
+      "category": "Serviços Financeiros"
+    },
+    {
+      "name": "Outros Financiamento",
+      "category": "Financiamento"
+    },
+    {
+      "name": "Outros Lazer",
+      "category": "Lazer"
+    },
+    {
+      "name": "Outros Moradia",
+      "category": "Moradia"
+    },
+    {
+      "name": "Outros Outros Seguros",
+      "category": "Outros Seguros"
+    },
+    {
+      "name": "Outros Pessoais",
+      "category": "Pessoais"
+    },
+    {
+      "name": "Outros Previdência",
+      "category": "Previdência"
+    },
+    {
+      "name": "Outros Saúde",
+      "category": "Saúde"
+    },
+    {
+      "name": "Outros Transporte",
+      "category": "Transporte"
+    },
+    {
+      "name": "Padaria",
+      "category": "Alimentação"
+    },
+    {
+      "name": "Pagamento de Fatura",
+      "category": "Pagamento de Fatura"
+    },
+    {
+      "name": "Parcelamento Cartão de Crédito",
+      "category": "Empréstimo"
+    },
+    {
+      "name": "Participação de Lucros Principal",
+      "category": "Renda Principal"
+    },
+    {
+      "name": "Participação nos Lucros Cônjuge",
+      "category": "Renda Cônjuge"
+    },
+    {
+      "name": "Pedágio",
+      "category": "Transporte"
+    },
+    {
+      "name": "Pensão / Auxílio de Parentes",
+      "category": "Renda Extra"
+    },
+    {
+      "name": "Planejamento Financeiro Pessoal",
+      "category": "Serviços Financeiros"
+    },
+    {
+      "name": "Plano de Saúde",
+      "category": "Saúde"
+    },
+    {
+      "name": "Presentes",
+      "category": "Diversos"
+    },
+    {
+      "name": "Presentes / Festa de Aniversário",
+      "category": "Dependentes"
+    },
+    {
+      "name": "Previdência Privada Avulsa",
+      "category": "Previdência"
+    },
+    {
+      "name": "Previdência Privada Dependentes",
+      "category": "Previdência"
+    },
+    {
+      "name": "Previdência Privada Empresa",
+      "category": "Previdência"
+    },
+    {
+      "name": "Projeto 1",
+      "category": "Investimentos"
+    },
+    {
+      "name": "Projeto 2",
+      "category": "Investimentos"
+    },
+    {
+      "name": "Projeto 3",
+      "category": "Investimentos"
+    },
+    {
+      "name": "Pós-Graduação",
+      "category": "Educação"
+    },
+    {
+      "name": "Recebimento Aluguel",
+      "category": "Renda Extra"
+    },
+    {
+      "name": "Recebimento de outra conta",
+      "category": "Receb Transf"
+    },
+    {
+      "name": "Recebimento Transferencia",
+      "category": "Receb Transf"
+    },
+    {
+      "name": "Refeições em restaurante",
+      "category": "Alimentação"
+    },
+    {
+      "name": "Reforma / Manutenção / Jardineiro",
+      "category": "Moradia"
+    },
+    {
+      "name": "Rematrícula e Uniforme",
+      "category": "Dependentes"
+    },
+    {
+      "name": "Renegociações de Dívidas",
+      "category": "Empréstimo"
+    },
+    {
+      "name": "Resgate Investimentos",
+      "category": "Renda Extra"
+    },
+    {
+      "name": "Responsabilidade Civil / Outros",
+      "category": "Outros Seguros"
+    },
+    {
+      "name": "Restituição IR",
+      "category": "Renda Extra"
+    },
+    {
+      "name": "Salário 1",
+      "category": "Renda Principal"
+    },
+    {
+      "name": "Salário 2",
+      "category": "Renda Principal"
+    },
+    {
+      "name": "Salário Cônjuge",
+      "category": "Renda Cônjuge"
+    },
+    {
+      "name": "Salário Principal",
+      "category": "Renda Principal"
+    },
+    {
+      "name": "Salão / Barbeiro / Manicure",
+      "category": "Pessoais"
+    },
+    {
+      "name": "Seguro Carro",
+      "category": "Transporte"
+    },
+    {
+      "name": "Seguro Residencial",
+      "category": "Moradia"
+    },
+    {
+      "name": "Serviços de limpeza / Faxina",
+      "category": "Moradia"
+    },
+    {
+      "name": "Shopping Park Apartamento",
+      "category": "Alguel Inquilino"
+    },
+    {
+      "name": "Supermercado",
+      "category": "Alimentação"
+    },
+    {
+      "name": "Suplemento Alimentar",
+      "category": "Pessoais"
+    },
+    {
+      "name": "Tarifas Bancárias",
+      "category": "Serviços Financeiros"
+    },
+    {
+      "name": "Telefone Celular",
+      "category": "Telefonia"
+    },
+    {
+      "name": "Telefone Fixo",
+      "category": "Telefonia"
+    },
+    {
+      "name": "Terapia / Tratamentos Contínuos",
+      "category": "Saúde"
+    },
+    {
+      "name": "TV a cabo",
+      "category": "Comunicação"
+    },
+    {
+      "name": "Táxi",
+      "category": "Transporte"
+    },
+    {
+      "name": "Uber",
+      "category": "Transporte"
+    },
+    {
+      "name": "Utensílios e Eletrodomésticos",
+      "category": "Moradia"
+    },
+    {
+      "name": "Vestuário / Calçados / Acessórios",
+      "category": "Pessoais"
+    },
+    {
+      "name": "Vestuário / Calçados / Acessórios Dep",
+      "category": "Dependentes"
+    },
+    {
+      "name": "Viagens",
+      "category": "Lazer"
+    },
+    {
+      "name": "VT / VR / VA",
+      "category": "Renda Extra"
+    },
+    {
+      "name": "Água",
+      "category": "Moradia"
+    },
+    {
+      "name": "Ônibus / Metrô",
+      "category": "Transporte"
+    }
+  ],
+  "institutions": [
+    {
+      "name": "Banco do Brasil",
+      "kind": "Conta",
+      "openingBalance": 0
+    },
+    {
+      "name": "Conta Principal",
+      "kind": "Conta",
+      "openingBalance": 0
+    },
+    {
+      "name": "Inter PJ",
+      "kind": "Conta",
+      "openingBalance": 0
+    },
+    {
+      "name": "Itaú",
+      "kind": "Conta",
+      "openingBalance": 0
+    },
+    {
+      "name": "Nubank Conta",
+      "kind": "Conta",
+      "openingBalance": 0
+    },
+    {
+      "name": "Nubank Master 1",
+      "kind": "Cartão",
+      "openingBalance": 0
+    },
+    {
+      "name": "Nubank Master 2",
+      "kind": "Cartão",
+      "openingBalance": 0
+    },
+    {
+      "name": "Santander",
+      "kind": "Conta",
+      "openingBalance": 0
+    }
+  ],
+  "rules": [],
+  "transactions": []
+}

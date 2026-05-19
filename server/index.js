@@ -459,17 +459,26 @@ function seedDb() {
   if (count || !seedPath || !fs.existsSync(seedPath)) return;
 
   const seed = JSON.parse(fs.readFileSync(seedPath, "utf8"));
-  const addCategory = db.prepare("INSERT OR IGNORE INTO categories(name,type) VALUES (?,?)");
+  const addCategory = db.prepare("INSERT OR IGNORE INTO categories(name,type,show_on_dashboard,dashboard_order) VALUES (?,?,?,?)");
+  const updateCategory = db.prepare("UPDATE categories SET type=?, show_on_dashboard=?, dashboard_order=? WHERE name=?");
   const addSubcategory = db.prepare("INSERT OR IGNORE INTO subcategories(name,category_id) VALUES (?,?)");
+  const addRule = db.prepare("INSERT OR IGNORE INTO rule_map(pattern,subcategory_id,priority) VALUES (?,?,?)");
 
   const insertSeed = db.transaction(() => {
-    for (const c of seed.categories) addCategory.run(c.name, c.type);
-    for (const s of seed.subcategories) {
+    for (const c of seed.categories || []) {
+      addCategory.run(c.name, c.type, Number(c.showOnDashboard || 0), Number(c.dashboardOrder || 0));
+      updateCategory.run(c.type, Number(c.showOnDashboard || 0), Number(c.dashboardOrder || 0), c.name);
+    }
+    for (const s of seed.subcategories || []) {
       const cat = one("SELECT id FROM categories WHERE name=?", [s.category]);
       if (cat) addSubcategory.run(s.name, cat.id);
     }
-    for (const i of seed.institutions) addInstitution.run(i.name, i.kind, i.openingBalance || 0);
-    for (const t of seed.transactions) createTransaction(t);
+    for (const i of seed.institutions || []) addInstitution.run(i.name, i.kind, i.openingBalance || 0);
+    for (const r of seed.rules || []) {
+      const sub = one("SELECT id FROM subcategories WHERE name=?", [r.subcategory]);
+      if (sub) addRule.run(r.pattern, sub.id, r.priority || 50);
+    }
+    for (const t of seed.transactions || []) createTransaction(t);
   });
 
   insertSeed();

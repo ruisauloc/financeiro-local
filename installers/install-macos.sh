@@ -16,7 +16,7 @@ if ! command -v npm >/dev/null 2>&1; then
 fi
 
 npm install
-FINANCEIRO_DEFAULT_PASSWORD=123456 FINANCEIRO_BOOTSTRAP_PASSWORD_ONLY=1 npm run server
+FINANCEIRO_DEFAULT_PASSWORD=123456 FINANCEIRO_BOOTSTRAP_PASSWORD_ONLY=1 FINANCEIRO_SEED_PATH="$(pwd)/seed-current-cadastros.json" npm run server
 npm run build
 
 echo ""

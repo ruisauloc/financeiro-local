@@ -14,9 +14,11 @@ npm install
 
 $env:FINANCEIRO_DEFAULT_PASSWORD = "123456"
 $env:FINANCEIRO_BOOTSTRAP_PASSWORD_ONLY = "1"
+$env:FINANCEIRO_SEED_PATH = Join-Path $PSScriptRoot "..\seed-current-cadastros.json"
 npm run server
 Remove-Item Env:\FINANCEIRO_DEFAULT_PASSWORD -ErrorAction SilentlyContinue
 Remove-Item Env:\FINANCEIRO_BOOTSTRAP_PASSWORD_ONLY -ErrorAction SilentlyContinue
+Remove-Item Env:\FINANCEIRO_SEED_PATH -ErrorAction SilentlyContinue
 
 npm run build
 

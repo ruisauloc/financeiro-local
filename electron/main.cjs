@@ -7,7 +7,7 @@ const apiPort = Number(process.env.PORT || 6397);
 function configureLocalData() {
   process.env.FINANCEIRO_DATA_DIR = process.env.FINANCEIRO_DATA_DIR || app.getPath("userData");
   process.env.FINANCEIRO_DEFAULT_PASSWORD = process.env.FINANCEIRO_DEFAULT_PASSWORD || "123456";
-  process.env.FINANCEIRO_SEED_PATH = process.env.FINANCEIRO_SEED_PATH || "none";
+  process.env.FINANCEIRO_SEED_PATH = process.env.FINANCEIRO_SEED_PATH || path.join(__dirname, "..", "seed-current-cadastros.json");
 }
 
 async function startApi() {
