@@ -4,6 +4,8 @@ dist/
 release/*
 !release/Financeiro Local 1.0.2.exe
 !release/Financeiro Local Setup 1.0.2.exe
+!release/Financeiro Local 1.0.3.exe
+!release/Financeiro Local Setup 1.0.3.exe
 .vite/
 tmp/
 
