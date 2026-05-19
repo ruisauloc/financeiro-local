@@ -1,6 +1,7 @@
 # Dependencias e build
 node_modules/
 dist/
+release/
 .vite/
 tmp/
 

@@ -10,13 +10,15 @@ import * as XLSX from "xlsx";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
-const dbPath = path.resolve(process.env.FINANCEIRO_DB_PATH || path.join(root, "financeiro.sqlite"));
+const dataRoot = path.resolve(process.env.FINANCEIRO_DATA_DIR || root);
+fs.mkdirSync(dataRoot, { recursive: true });
+const dbPath = path.resolve(process.env.FINANCEIRO_DB_PATH || path.join(dataRoot, "financeiro.sqlite"));
 const seedPath = process.env.FINANCEIRO_SEED_PATH === "none"
   ? ""
   : path.resolve(process.env.FINANCEIRO_SEED_PATH || path.join(root, "seed-from-workbook.json"));
-const defaultAttachmentsDir = path.resolve(process.env.FINANCEIRO_ATTACHMENTS_DIR || path.join(root, "uploads", "attachments"));
+const defaultAttachmentsDir = path.resolve(process.env.FINANCEIRO_ATTACHMENTS_DIR || path.join(dataRoot, "uploads", "attachments"));
 const defaultInstallPassword = String(process.env.FINANCEIRO_DEFAULT_PASSWORD || "").trim();
-const runtimeConfigPath = path.join(root, "runtime-config.json");
+const runtimeConfigPath = path.join(dataRoot, "runtime-config.json");
 const defaultPorts = { apiPort: 6397, clientPort: 5179 };
 const upload = multer({ storage: multer.memoryStorage() });
 const app = express();
@@ -2031,6 +2033,15 @@ async function insertSqlServerRow(pool, table, row) {
 app.get("/api/mapping", (_req, res) => {
   res.type("text/markdown").send(fs.readFileSync(path.join(root, "docs", "MAPEAMENTO-PLANILHA.md"), "utf8"));
 });
+
+const frontendDir = path.join(root, "dist");
+if (fs.existsSync(path.join(frontendDir, "index.html"))) {
+  app.use(express.static(frontendDir));
+  app.use((req, res, next) => {
+    if (req.method !== "GET" || req.path.startsWith("/api/")) return next();
+    res.sendFile(path.join(frontendDir, "index.html"));
+  });
+}
 
 initDb();
 ensureDefaultInstallPassword();

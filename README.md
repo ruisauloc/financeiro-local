@@ -76,6 +76,36 @@ Depois do primeiro login, altere a senha em:
 Avançado > Geral > Segurança
 ```
 
+## Executáveis
+
+O projeto também pode ser gerado como aplicativo desktop com Electron:
+
+- Windows: instalador `.exe` e executável portátil `.exe`.
+- Linux: `.AppImage` e `.deb`.
+- macOS: `.dmg` e `.zip`.
+
+Os executáveis ficam disponíveis em **GitHub Actions** como artifacts quando o workflow `Build executables` é executado manualmente. Ao criar uma tag `v*`, por exemplo `v1.0.1`, o workflow também publica os arquivos em **GitHub Releases**.
+
+Arquivos `.exe`, `.dmg`, `.AppImage` e `.deb` não são versionados diretamente no Git porque passam facilmente de 100 MB. O repositório contém a configuração que gera esses instaladores de forma reproduzível.
+
+Para gerar localmente:
+
+```bash
+npm run dist:win
+npm run dist:linux
+npm run dist:mac
+```
+
+Cada comando deve ser executado no respectivo sistema operacional. O Windows gera Windows, o Linux gera Linux e o macOS gera macOS.
+
+No app desktop, a senha inicial também é:
+
+```text
+123456
+```
+
+Os dados do app desktop ficam na pasta local de dados do usuário do sistema operacional, não dentro da pasta do executável.
+
 ### Windows
 
 Instale:
