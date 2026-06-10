@@ -23,6 +23,10 @@ O projeto roda em rede local ou via VPN, com frontend React/Vite, API Node/Expre
 - Configuração da pasta local de anexos.
 - Preparação para migração/exportação para SQLite externo, SQL Server e planilha.
 - Autenticação local por senha para uso em rede local ou VPN.
+- Instâncias individuais, com banco próprio por pessoa, limitadas a 4 instâncias.
+- Bot Telegram com vínculo por instância, consultas, alertas e lançamento guiado.
+- Backup completo com SQLite, anexos, mídias do Telegram e restauração por instância.
+- Central de auditoria, tela de saúde do sistema e relatórios mensais em Excel.
 
 ## Capturas de Tela
 
@@ -73,22 +77,33 @@ Os instaladores abaixo preparam o projeto, criam o banco local se ele ainda não
 Depois do primeiro login, altere a senha em:
 
 ```text
-Avançado > Geral > Segurança
+Avançado > Segurança
 ```
 
 ## Executáveis
 
-O projeto também pode ser gerado como aplicativo desktop com Electron:
+O projeto também é distribuído como aplicativo desktop com Electron:
 
 - Windows: instalador `.exe` e executável portátil `.exe`.
-- Linux: `.AppImage` e `.deb`.
-- macOS: `.dmg` e `.zip`.
+- Linux Debian/Ubuntu: pacote `.deb`.
 
-Os executáveis ficam disponíveis em **GitHub Releases** quando uma tag `v*` é criada, por exemplo `v1.0.2`. O workflow `Build executables` também guarda os arquivos em **GitHub Actions** como artifacts.
+Os executáveis ficam disponíveis em **GitHub Releases**. A versão atual publicada é `v1.0.20`.
 
-Arquivos `.exe`, `.dmg`, `.AppImage` e `.deb` não são versionados diretamente no Git porque passam facilmente de 100 MB. O repositório contém a configuração que gera esses instaladores de forma reproduzível.
+Arquivos `.exe` e `.deb` não são versionados diretamente no Git porque passam facilmente de 100 MB. Eles ficam nos assets da Release.
 
-Para gerar localmente:
+### Baixar versão atual
+
+- [Windows Installer](https://github.com/ruisauloc/financeiro-local/releases/download/v1.0.20/Financeiro-Local-Setup-1.0.20-Windows.exe)
+- [Windows Portable](https://github.com/ruisauloc/financeiro-local/releases/download/v1.0.20/Financeiro-Local-1.0.20-Windows-Portable.exe)
+- [Linux .deb](https://github.com/ruisauloc/financeiro-local/releases/download/v1.0.20/financeiro_1.0.20_amd64.deb)
+
+Página da Release:
+
+```text
+https://github.com/ruisauloc/financeiro-local/releases/tag/v1.0.20
+```
+
+### Gerar localmente
 
 ```bash
 npm run dist:win
@@ -96,7 +111,7 @@ npm run dist:linux
 npm run dist:mac
 ```
 
-Cada comando deve ser executado no respectivo sistema operacional. O Windows gera Windows, o Linux gera Linux e o macOS gera macOS.
+Para Windows, gere no Windows. Para Linux `.deb`, gere em Linux ou WSL com ambiente Node nativo Linux. O macOS deve ser gerado em macOS.
 
 No app desktop, a senha inicial também é:
 
@@ -106,27 +121,13 @@ No app desktop, a senha inicial também é:
 
 Os dados do app desktop ficam na pasta local de dados do usuário do sistema operacional, não dentro da pasta do executável.
 
-A versão `1.0.2` já nasce com uma base inicial de cadastros sanitizada:
+A versão `1.0.20` nasce com uma base inicial de cadastros sanitizada:
 
 - Categorias, subcategorias e contas/cartões atuais.
 - Sem lançamentos, OFX, anexos, assinaturas ou orçamentos.
 - Com filtro aplicado para remover nomes pessoais sensíveis antes do empacotamento.
 
-### Baixar instaladores
-
-Baixe a versão mais recente em:
-
-```text
-https://github.com/ruisauloc/financeiro-local/releases
-```
-
-Arquivos esperados por sistema:
-
-- Windows: `Financeiro Local Setup x.y.z.exe` ou `Financeiro Local x.y.z.exe`.
-- Linux: `.AppImage` ou `.deb`.
-- macOS: `.dmg` ou `.zip`.
-
-Os scripts antigos da pasta `installers/` foram removidos. A instalação distribuída agora é feita pelos executáveis gerados pelo workflow.
+Para levar uma base real para outro computador, use `Avançado > Backup` no computador de origem e restaure o ZIP no destino.
 
 ## Instalação manual
 
@@ -161,7 +162,7 @@ http://IP_DA_VPN:5179
 Com instalador:
 
 - Senha inicial: `123456`.
-- Altere em `Avançado > Geral > Segurança`.
+- Altere em `Avançado > Segurança`.
 
 Sem instalador:
 
@@ -183,12 +184,18 @@ npm run preview
 
 ## Armazenamento de dados
 
-Por padrão:
+No modo desenvolvimento, por padrão:
 
 - Banco: `financeiro.sqlite`
 - Anexos: `uploads/attachments`
 - Porta da API: `6397`
 - Porta do frontend: `5179`
+
+No app instalado, os dados ficam na pasta local de dados do usuário do sistema operacional. Exemplos comuns:
+
+- Windows: `%APPDATA%/Financeiro Local`
+- Linux: `~/.config/Financeiro Local`
+- macOS: `~/Library/Application Support/Financeiro Local`
 
 Esses arquivos e pastas são dados reais de uso e não devem ir para o GitHub.
 
@@ -215,7 +222,7 @@ Recursos atuais:
 
 - Senha local obrigatória.
 - Senha padrão opcional apenas via instalador.
-- Troca de senha em `Avançado > Geral > Segurança`.
+- Troca de senha em `Avançado > Segurança`.
 - Hash de senha com PBKDF2.
 - Cookie de sessão HTTP-only.
 - Proteção das rotas da API.
@@ -234,6 +241,27 @@ Em `Avançado > Conexões`, o sistema permite preparar:
 - Planilha Excel.
 
 No estado atual, a aplicação ainda executa sobre o SQLite local principal. As opções externas servem para testar conexão, criar estrutura, exportar/migrar dados e importar de volta para o SQLite local.
+
+## Backup, auditoria e saúde
+
+Em `Avançado`, a aplicação inclui:
+
+- `Backup`: exporta pacote ZIP completo e restaura a instância atual.
+- `Auditoria`: lista eventos sensíveis, como exclusões, alterações, importações OFX, migrações e troca de senha.
+- `Saúde`: mostra banco em uso, pasta de anexos, mídias Telegram, portas, instâncias, contagens e últimos eventos.
+- `Relatórios`: exporta Excel mensal com resumo, lançamentos, categorias, subcategorias, orçamentos e itens sem subcategoria.
+
+## Telegram Bot
+
+O bot é opcional e configurado em `Avançado > Telegram Bot`.
+
+Recursos:
+
+- Vínculo por instância.
+- Consultas como `/resumo`, `/orcamentos`, `/previstos`, `/faturas` e `/top`.
+- Lançamento por texto livre.
+- Lançamento guiado com `/lancar` ou `/lançar`.
+- Alertas com agenda, mensagem personalizada e mídia opcional.
 
 ## Documentação
 
