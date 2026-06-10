@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { motion } from "framer-motion";
 import {
@@ -23,6 +23,7 @@ import {
 import {
   ArrowLeftRight,
   Banknote,
+  Bot,
   CalendarClock,
   CreditCard,
   Database,
@@ -35,6 +36,7 @@ import {
   Upload,
   Trash2,
   Save,
+  Send,
   Plus,
   X,
   ShieldAlert,
@@ -43,6 +45,9 @@ import {
   Pencil,
   Lock,
   LogOut,
+  Download,
+  FileSpreadsheet,
+  Activity,
 } from "lucide-react";
 import "./styles.css";
 
@@ -114,6 +119,10 @@ const DEFAULT_APPEARANCE = {
 
 function mergeAppearance(value = {}) {
   const theme = THEMES[value.theme] ? value.theme : DEFAULT_APPEARANCE.theme;
+  const dashboardRules = { ...DEFAULT_DASHBOARD_RULES, ...(value.dashboardRules || {}) };
+  if (!["Despesa", "Receita", "Fatura", "Todos"].includes(dashboardRules.topCategoriesResult)) dashboardRules.topCategoriesResult = DEFAULT_DASHBOARD_RULES.topCategoriesResult;
+  if (!["Despesa", "Receita", "Fatura", "Todos"].includes(dashboardRules.topSubcategoriesResult)) dashboardRules.topSubcategoriesResult = DEFAULT_DASHBOARD_RULES.topSubcategoriesResult;
+  if (!["Realizado", "Previsto", "Todos"].includes(dashboardRules.monthlyStatus)) dashboardRules.monthlyStatus = DEFAULT_DASHBOARD_RULES.monthlyStatus;
   return {
     theme,
     density: ["comfortable", "compact", "dense"].includes(value.density) ? value.density : "comfortable",
@@ -125,7 +134,7 @@ function mergeAppearance(value = {}) {
     topLimit: [5, 10].includes(Number(value.topLimit)) ? Number(value.topLimit) : 5,
     dashboardBlocks: { ...DEFAULT_DASHBOARD_BLOCKS, ...(value.dashboardBlocks || {}) },
     extraDashboards: { ...DEFAULT_EXTRA_DASHBOARDS, ...(value.extraDashboards || {}) },
-    dashboardRules: { ...DEFAULT_DASHBOARD_RULES, ...(value.dashboardRules || {}) },
+    dashboardRules,
     topCategoryChartModel: chartModels.includes(value.topCategoryChartModel) ? value.topCategoryChartModel : "bar",
     topSubcategoryChartModel: chartModels.includes(value.topSubcategoryChartModel) ? value.topSubcategoryChartModel : "bar",
     customColors: { ...THEMES[theme].colors, ...(value.customColors || {}) },
@@ -420,7 +429,8 @@ function App() {
 
   const logout = async () => {
     await api("/auth/logout", { method: "POST", headers: jsonHeaders(), body: "{}" }).catch(() => {});
-    setAuth({ loading: false, authenticated: false, setupRequired: false });
+    const status = await api("/auth/status").catch(() => ({ authenticated: false, setupRequired: false, instances: [] }));
+    setAuth({ loading: false, ...status, authenticated: false });
     setSummary(null);
     setTransactions([]);
   };
@@ -430,6 +440,7 @@ function App() {
     return (
       <AuthGate
         setupRequired={auth.setupRequired}
+        instances={auth.instances || []}
         onAuthenticated={(status) => setAuth({ loading: false, ...status, authenticated: true, setupRequired: false })}
       />
     );
@@ -557,7 +568,7 @@ function QuickTransactionModal({ config, onClose, onSaved, setMessage }) {
   );
 }
 
-function ConfirmDialog({ open, title, body, confirmLabel = "Confirmar", cancelLabel = "Cancelar", intent = "danger", busy = false, onCancel, onConfirm }) {
+function ConfirmDialog({ open, title, body, confirmLabel = "Confirmar", cancelLabel = "Cancelar", intent = "danger", busy = false, disabled = false, onCancel, onConfirm, children }) {
   if (!open) return null;
   return (
     <div className="modal-backdrop confirm-backdrop" onMouseDown={onCancel}>
@@ -574,10 +585,11 @@ function ConfirmDialog({ open, title, body, confirmLabel = "Confirmar", cancelLa
         <div>
           <h2>{title}</h2>
           <p>{body}</p>
+          {children}
         </div>
         <div className="confirm-actions">
           <button type="button" className="secondary" onClick={onCancel} disabled={busy}>{cancelLabel}</button>
-          <button type="button" className={`primary ${intent === "danger" ? "danger-action" : ""}`} onClick={onConfirm} disabled={busy}>
+          <button type="button" className={`primary ${intent === "danger" ? "danger-action" : ""}`} onClick={onConfirm} disabled={busy || disabled}>
             {busy ? "Processando..." : confirmLabel}
           </button>
         </div>
@@ -602,12 +614,17 @@ function AuthShell({ title, subtitle, children }) {
   );
 }
 
-function AuthGate({ setupRequired, onAuthenticated }) {
+function AuthGate({ setupRequired, instances = [], onAuthenticated }) {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [instanceId, setInstanceId] = useState(instances[0]?.id || "admin");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const isSetup = setupRequired;
+  useEffect(() => {
+    if (!instances.length || instances.some((instance) => instance.id === instanceId)) return;
+    setInstanceId(instances[0].id);
+  }, [instances, instanceId]);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -621,7 +638,7 @@ function AuthGate({ setupRequired, onAuthenticated }) {
       await api(isSetup ? "/auth/setup" : "/auth/login", {
         method: "POST",
         headers: jsonHeaders(),
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ password, instanceId }),
       });
       const status = await api("/auth/status");
       onAuthenticated(status);
@@ -638,6 +655,14 @@ function AuthGate({ setupRequired, onAuthenticated }) {
       subtitle={isSetup ? "Essa senha protege o uso pela rede local e pela VPN." : "Digite a senha local para abrir o financeiro."}
     >
       <form className="auth-form" onSubmit={submit}>
+        {!isSetup && instances.length > 0 && (
+          <Select
+            label="Instância"
+            value={instanceId}
+            onChange={setInstanceId}
+            options={instances.filter((instance) => instance.active !== false).map((instance) => [instance.id, instance.name])}
+          />
+        )}
         <Input label="Senha" type="password" value={password} onChange={setPassword} />
         {isSetup && <Input label="Confirmar senha" type="password" value={confirm} onChange={setConfirm} />}
         {error && <div className="auth-error">{error}</div>}
@@ -795,7 +820,7 @@ function Dashboard({ summary, transactions, appearance }) {
         )}
 
         {blocks.monthly && <div className="panel wide">
-          <PanelTitle icon={Banknote} title="Fluxo Mensal" />
+          <PanelTitle icon={Banknote} title={`Fluxo Mensal${rules.monthlyStatus !== "Todos" ? ` · ${rules.monthlyStatus}` : ""}`} />
           <div className="monthly-chart-area">
             <ResponsiveContainer width="100%" height="100%">
               <MonthlyChart data={summary.monthly} model={appliedAppearance.monthlyChartModel} colors={colors} />
@@ -1059,6 +1084,19 @@ function Transactions({ transactions, config, onSaved, setMessage }) {
           rows={transactions}
           onEdit={(row) => setEditing(transactionToForm(row))}
           onDelete={(row) => setPendingDelete(row)}
+          onSetRealized={async (row) => {
+            try {
+              await api(`/transactions/${row.id}/realize`, {
+                method: "POST",
+                headers: jsonHeaders(),
+                body: JSON.stringify({ paymentDate: today() }),
+              });
+              setMessage("Lançamento marcado como realizado.");
+              onSaved();
+            } catch (error) {
+              setMessage(error.message);
+            }
+          }}
         />
       </div>
       <ConfirmDialog
@@ -1175,12 +1213,21 @@ function OfxImport({ config, onSaved, setMessage }) {
   const [selectedSuggestions, setSelectedSuggestions] = useState({});
   const [customSearches, setCustomSearches] = useState({});
   const [loading, setLoading] = useState("");
+  const fileInputRef = useRef(null);
   const accounts = sortByNamePtBr(config.institutions).filter((i) => normalizeText(i.kind || "Conta").includes("conta"));
+  const chooseOfxFile = (nextFile) => {
+    setFile(nextFile || null);
+    setPreview(null);
+    setSelectedSuggestions({});
+    setCustomSearches({});
+  };
   const previewFile = async () => {
     if (!file) return;
+    if (!institutionId) return setMessage("Selecione a conta antes de pré-visualizar.");
     setLoading("Analisando OFX");
     const body = new FormData();
     body.append("file", file);
+    body.append("institutionId", institutionId);
     try {
       const result = await fetch("/api/ofx/preview", { method: "POST", body }).then(async (r) => {
         const data = await r.json();
@@ -1196,27 +1243,29 @@ function OfxImport({ config, onSaved, setMessage }) {
   };
   const submit = async (e) => {
     e.preventDefault();
-    if (!file) return setMessage("Escolha um arquivo OFX.");
-    if (!preview) return setMessage("Pré-visualize o OFX antes de importar para confirmar as sugestões.");
-    if (!institutionId) return setMessage("Selecione a conta antes de importar.");
-    const pendingReviews = reviewTransactions.filter((t) => !selectedSuggestions[t.key]);
-    if (pendingReviews.length) return setMessage(`Revise ${pendingReviews.length} item(ns) antes de importar.`);
-    setLoading("Importando OFX");
-    const body = new FormData();
-    body.append("file", file);
-    body.append("institutionId", institutionId);
-    body.append("overrides", JSON.stringify(selectedSuggestions));
     try {
+      if (!file) return setMessage("Escolha um arquivo OFX.");
+      if (!preview) return setMessage("Pré-visualize o OFX antes de importar para confirmar as sugestões.");
+      if (!institutionId) return setMessage("Selecione a conta antes de importar.");
+      const pendingReviews = reviewTransactions.filter((t) => !selectedSuggestions[t.key]);
+      if (pendingReviews.length) return setMessage(`Revise ${pendingReviews.length} item(ns) antes de importar.`);
+      setLoading("Importando OFX");
+      const body = new FormData();
+      body.append("file", file);
+      body.append("institutionId", institutionId);
+      body.append("overrides", JSON.stringify(selectedSuggestions));
       const result = await fetch("/api/ofx/import", { method: "POST", body }).then(async (r) => {
         const data = await r.json();
         if (!r.ok) throw new Error(data.error);
         return data;
       });
-      setMessage(`OFX importado: ${result.inserted} transações.`);
+      setMessage(`OFX importado: ${result.inserted} transações novas. ${result.skipped || 0} já existiam e foram preservadas.`);
       setPreview(null);
       setSelectedSuggestions({});
       setCustomSearches({});
       onSaved();
+    } catch (error) {
+      setMessage(error.message || "Falha ao importar OFX.");
     } finally {
       setLoading("");
     }
@@ -1244,7 +1293,7 @@ function OfxImport({ config, onSaved, setMessage }) {
     setSelectedSuggestions((current) => ({ ...current, [transactionKey]: item.id }));
     setCustomSearch(transactionKey, `${item.name} · ${item.category}`);
   };
-  const reviewTransactions = preview?.transactions.filter((t) => !t.willApplySuggestion) || [];
+  const reviewTransactions = preview?.transactions.filter((t) => !t.duplicate && !t.willApplySuggestion) || [];
   const pendingReviewCount = reviewTransactions.filter((t) => !selectedSuggestions[t.key]).length;
   const selectedCount = Object.keys(selectedSuggestions).length;
   return (
@@ -1261,11 +1310,29 @@ function OfxImport({ config, onSaved, setMessage }) {
       <FormPanel title="Importar OFX" onSubmit={submit} button="Importar definitivo">
         <Select label="Conta" value={institutionId} onChange={setInstitutionId} options={accounts.map((i) => [i.id, `${i.name} · ${i.kind || "Conta"}`])} />
         {!accounts.length && <p className="muted wide-field">Nenhuma conta bancária encontrada. Confira em Cadastros se a instituição está com tipo Conta.</p>}
-        <label className="file-box">
+        <div
+          className="file-box"
+          role="button"
+          tabIndex={0}
+          onClick={() => fileInputRef.current?.click()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              fileInputRef.current?.click();
+            }
+          }}
+        >
           <Upload size={24} />
           <span>{file ? file.name : "Escolha um arquivo .ofx"}</span>
-          <input type="file" accept=".ofx" onChange={(e) => { setFile(e.target.files?.[0]); setPreview(null); setSelectedSuggestions({}); setCustomSearches({}); }} />
-        </label>
+          <button type="button" className="secondary file-select-button">Selecionar arquivo</button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".ofx,.OFX"
+            onClick={(e) => { e.target.value = ""; }}
+            onChange={(e) => chooseOfxFile(e.target.files?.[0])}
+          />
+        </div>
         <button type="button" className="secondary" disabled={!file || Boolean(loading)} onClick={() => previewFile().catch((e) => setMessage(e.message))}>Pré-visualizar</button>
       </FormPanel>
       {preview && (
@@ -1712,6 +1779,24 @@ function AdvancedSettings({ onSaved, setMessage, appearance, onAppearanceChange 
   const [includeSettings, setIncludeSettings] = useState(false);
   const [busy, setBusy] = useState(false);
   const [passwordForm, setPasswordForm] = useState({ currentPassword: "", nextPassword: "", confirmPassword: "" });
+  const [instances, setInstances] = useState({ maxInstances: 4, instances: [] });
+  const [instanceForm, setInstanceForm] = useState({ name: "", password: "", confirmPassword: "" });
+  const [pendingInstanceDelete, setPendingInstanceDelete] = useState(null);
+  const [instanceDeleteConfirmation, setInstanceDeleteConfirmation] = useState("");
+  const [telegramStatus, setTelegramStatus] = useState({
+    enabled: false,
+    tokenConfigured: false,
+    linkedToCurrentInstance: false,
+    currentInstanceId: "admin",
+    isAdmin: false,
+  });
+  const [telegramForm, setTelegramForm] = useState({ token: "", enabled: false });
+  const [telegramLink, setTelegramLink] = useState(null);
+  const [telegramAlerts, setTelegramAlerts] = useState({ alerts: [], queries: [] });
+  const [health, setHealth] = useState(null);
+  const [auditRows, setAuditRows] = useState([]);
+  const [restoreFile, setRestoreFile] = useState(null);
+  const [reportPeriod, setReportPeriod] = useState({ year: new Date().getFullYear(), month: new Date().getMonth() + 1 });
   const [settings, setSettings] = useState({
     attachmentsDir: "",
     effectiveAttachmentsDir: "",
@@ -1730,8 +1815,50 @@ function AdvancedSettings({ onSaved, setMessage, appearance, onAppearanceChange 
     onAppearanceChange(nextAppearance);
     localStorage.setItem("financeiroAppearance", JSON.stringify(nextAppearance));
   };
+  const loadInstances = async () => {
+    try {
+      setInstances(await api("/instances"));
+    } catch {
+      setInstances({ maxInstances: 4, instances: [] });
+    }
+  };
+  const loadTelegramStatus = async () => {
+    try {
+      const status = await api("/telegram/status");
+      setTelegramStatus(status);
+      setTelegramForm((current) => ({ ...current, enabled: Boolean(status.enabled) }));
+    } catch (error) {
+      setMessage(error.message);
+    }
+  };
+  const loadTelegramAlerts = async () => {
+    try {
+      setTelegramAlerts(await api("/telegram/alerts"));
+    } catch (error) {
+      setMessage(error.message);
+    }
+  };
+  const loadHealth = async () => {
+    try {
+      setHealth(await api("/health"));
+    } catch (error) {
+      setMessage(error.message);
+    }
+  };
+  const loadAudit = async () => {
+    try {
+      setAuditRows(await api("/audit?limit=160"));
+    } catch (error) {
+      setMessage(error.message);
+    }
+  };
   useEffect(() => {
     loadSettings().catch((e) => setMessage(e.message));
+    loadInstances();
+    loadTelegramStatus();
+    loadTelegramAlerts();
+    loadHealth();
+    loadAudit();
   }, []);
 
   const clearBase = async (e) => {
@@ -1762,10 +1889,10 @@ function AdvancedSettings({ onSaved, setMessage, appearance, onAppearanceChange 
         body: JSON.stringify({
           attachmentsDir: settings.attachmentsDir,
           budgetAlerts: settings.budgetAlerts,
-          ports: {
+          ...(settings.instance?.role === "admin" ? { ports: {
             apiPort: settings.ports?.apiPort,
             clientPort: settings.ports?.clientPort,
-          },
+          } } : {}),
         }),
       });
       const nextAppearance = mergeAppearance(saved.appearance);
@@ -1800,6 +1927,125 @@ function AdvancedSettings({ onSaved, setMessage, appearance, onAppearanceChange 
     }
   };
 
+  const createInstance = async (e) => {
+    e.preventDefault();
+    if (instanceForm.password !== instanceForm.confirmPassword) {
+      setMessage("A senha da instância e a confirmação não conferem.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await api("/instances", {
+        method: "POST",
+        headers: jsonHeaders(),
+        body: JSON.stringify({ name: instanceForm.name, password: instanceForm.password }),
+      });
+      setInstanceForm({ name: "", password: "", confirmPassword: "" });
+      await loadInstances();
+      setMessage(`Instância ${result.instance.name} criada com cadastros copiados da admin.`);
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deleteInstance = async () => {
+    if (!pendingInstanceDelete) return;
+    setBusy(true);
+    try {
+      await api(`/instances/${pendingInstanceDelete.id}`, { method: "DELETE" });
+      setMessage(`Instância ${pendingInstanceDelete.name} excluída.`);
+      setPendingInstanceDelete(null);
+      setInstanceDeleteConfirmation("");
+      await loadInstances();
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveTelegramSettings = async (e) => {
+    e.preventDefault();
+    try {
+      const payload = { enabled: telegramForm.enabled };
+      if (telegramForm.token.trim()) payload.token = telegramForm.token.trim();
+      const saved = await api("/telegram/settings", {
+        method: "PUT",
+        headers: jsonHeaders(),
+        body: JSON.stringify(payload),
+      });
+      setTelegramForm({ token: "", enabled: Boolean(saved.enabled) });
+      await loadTelegramStatus();
+      setMessage(saved.enabled ? "Telegram Bot ativado." : "Telegram Bot salvo e desativado.");
+    } catch (error) {
+      setMessage(error.message);
+    }
+  };
+
+  const generateTelegramCode = async () => {
+    try {
+      const link = await api("/telegram/link-code", { method: "POST" });
+      setTelegramLink(link);
+      await loadTelegramStatus();
+      setMessage("Código de vínculo gerado. Envie para o bot no Telegram.");
+    } catch (error) {
+      setMessage(error.message);
+    }
+  };
+
+  const saveTelegramAlerts = async (nextConfig = telegramAlerts) => {
+    try {
+      const saved = await api("/telegram/alerts", {
+        method: "PUT",
+        headers: jsonHeaders(),
+        body: JSON.stringify(nextConfig),
+      });
+      setTelegramAlerts(saved);
+      setMessage("Alertas do Telegram salvos.");
+    } catch (error) {
+      setMessage(error.message);
+    }
+  };
+
+  const testTelegramAlert = async (alert) => {
+    try {
+      await api("/telegram/alerts/test", {
+        method: "POST",
+        headers: jsonHeaders(),
+        body: JSON.stringify({ alert }),
+      });
+      setMessage("Mensagem de teste enviada ao Telegram vinculado.");
+    } catch (error) {
+      setMessage(error.message);
+    }
+  };
+
+  const restoreBackup = async (e) => {
+    e.preventDefault();
+    if (!restoreFile) {
+      setMessage("Selecione um arquivo .zip de backup.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", restoreFile);
+      const result = await api("/backup/restore", { method: "POST", body: formData });
+      setRestoreFile(null);
+      setMessage(`Backup restaurado na instância ${result.restoredInstance}.`);
+      await Promise.all([loadSettings(), loadHealth(), loadAudit()]);
+      onSaved();
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reportUrl = `/api/reports/monthly.xlsx?year=${reportPeriod.year}&month=${reportPeriod.month}`;
+
   const options = [
     ["Backup local", "Exportar o SQLite e gerar pacote de segurança."],
     ["Importação em lote", "Processar vários OFX de uma pasta de uma vez."],
@@ -1816,14 +2062,48 @@ function AdvancedSettings({ onSaved, setMessage, appearance, onAppearanceChange 
       <div className="advanced-tabs">
         <button className={tab === "general" ? "active" : ""} onClick={() => setTab("general")}>Geral</button>
         <button className={tab === "security" ? "active" : ""} onClick={() => setTab("security")}>Segurança</button>
+        {settings.instance?.role === "admin" && <button className={tab === "instances" ? "active" : ""} onClick={() => setTab("instances")}>Instâncias</button>}
+        <button className={tab === "telegram" ? "active" : ""} onClick={() => setTab("telegram")}>Telegram Bot</button>
         <button className={tab === "connections" ? "active" : ""} onClick={() => setTab("connections")}>Conexões</button>
         <button className={tab === "appearance" ? "active" : ""} onClick={() => setTab("appearance")}>Personalização</button>
         <button className={tab === "dashboards" ? "active" : ""} onClick={() => setTab("dashboards")}>Dashboards</button>
+        <button className={tab === "backup" ? "active" : ""} onClick={() => setTab("backup")}>Backup</button>
+        <button className={tab === "audit" ? "active" : ""} onClick={() => { setTab("audit"); loadAudit(); }}>Auditoria</button>
+        <button className={tab === "health" ? "active" : ""} onClick={() => { setTab("health"); loadHealth(); }}>Saúde</button>
+        <button className={tab === "reports" ? "active" : ""} onClick={() => setTab("reports")}>Relatórios</button>
         <button className={tab === "budgetAlerts" ? "active" : ""} onClick={() => setTab("budgetAlerts")}>Alertas de Orçamento</button>
         <button className={tab === "nextUpdates" ? "active" : ""} onClick={() => setTab("nextUpdates")}>NextUpdates</button>
       </div>
 
       {tab === "connections" && <ConnectionSettings setMessage={setMessage} />}
+      {tab === "instances" && settings.instance?.role === "admin" && (
+        <InstanceSettings
+          value={instances}
+          form={instanceForm}
+          setForm={setInstanceForm}
+          busy={busy}
+          onSubmit={createInstance}
+          onDelete={(instance) => {
+            setPendingInstanceDelete(instance);
+            setInstanceDeleteConfirmation("");
+          }}
+        />
+      )}
+      {tab === "telegram" && (
+        <TelegramSettings
+          status={telegramStatus}
+          form={telegramForm}
+          setForm={setTelegramForm}
+          link={telegramLink}
+          alertsConfig={telegramAlerts}
+          setAlertsConfig={setTelegramAlerts}
+          onSave={saveTelegramSettings}
+          onGenerateCode={generateTelegramCode}
+          onSaveAlerts={saveTelegramAlerts}
+          onTestAlert={testTelegramAlert}
+          setMessage={setMessage}
+        />
+      )}
       {tab === "appearance" && (
         <AppearanceSettings
           appearance={settings.appearance}
@@ -1849,6 +2129,23 @@ function AdvancedSettings({ onSaved, setMessage, appearance, onAppearanceChange 
         />
       )}
       {tab === "nextUpdates" && <NextUpdatesSettings />}
+      {tab === "backup" && (
+        <BackupSettings
+          restoreFile={restoreFile}
+          setRestoreFile={setRestoreFile}
+          onRestore={restoreBackup}
+          busy={busy}
+        />
+      )}
+      {tab === "audit" && <AuditSettings rows={auditRows} onRefresh={loadAudit} />}
+      {tab === "health" && <HealthSettings value={health} onRefresh={loadHealth} />}
+      {tab === "reports" && (
+        <ReportsSettings
+          period={reportPeriod}
+          setPeriod={setReportPeriod}
+          reportUrl={reportUrl}
+        />
+      )}
       {tab === "budgetAlerts" && (
         <BudgetAlertSettings
           value={settings.budgetAlerts}
@@ -1900,25 +2197,31 @@ function AdvancedSettings({ onSaved, setMessage, appearance, onAppearanceChange 
 
       <form className="form-panel" onSubmit={saveSettings}>
         <h2>Geral</h2>
-        <div className="form-grid">
-          <Input
-            label="Porta da interface"
-            type="number"
-            value={settings.ports?.clientPort || 5179}
-            onChange={(clientPort) => setSettings({ ...settings, ports: { ...settings.ports, clientPort } })}
-          />
-          <Input
-            label="Porta da API"
-            type="number"
-            value={settings.ports?.apiPort || 6397}
-            onChange={(apiPort) => setSettings({ ...settings, ports: { ...settings.ports, apiPort } })}
-          />
-          <div className="path-info">
-            <span>API em uso agora</span>
-            <strong>{settings.ports?.activeApiPort || 6397}</strong>
-          </div>
-        </div>
-        <p className="muted">As portas são aplicadas depois de reiniciar o app. Use valores entre 1024 e 65535 e mantenha API e interface em portas diferentes.</p>
+        {settings.instance?.role === "admin" ? (
+          <>
+            <div className="form-grid">
+              <Input
+                label="Porta da interface"
+                type="number"
+                value={settings.ports?.clientPort || 5179}
+                onChange={(clientPort) => setSettings({ ...settings, ports: { ...settings.ports, clientPort } })}
+              />
+              <Input
+                label="Porta da API"
+                type="number"
+                value={settings.ports?.apiPort || 6397}
+                onChange={(apiPort) => setSettings({ ...settings, ports: { ...settings.ports, apiPort } })}
+              />
+              <div className="path-info">
+                <span>API em uso agora</span>
+                <strong>{settings.ports?.activeApiPort || 6397}</strong>
+              </div>
+            </div>
+            <p className="muted">As portas são globais do aplicativo e são aplicadas depois de reiniciar. Use valores entre 1024 e 65535 e mantenha API e interface em portas diferentes.</p>
+          </>
+        ) : (
+          <p className="muted">Esta instância usa a porta principal definida pela admin. Os dados, senha, anexos e configurações visuais continuam isolados.</p>
+        )}
 
         <h2>Base local</h2>
         <div className="form-grid">
@@ -1973,6 +2276,526 @@ function AdvancedSettings({ onSaved, setMessage, appearance, onAppearanceChange 
       </form>
         </>
       )}
+      <ConfirmDialog
+        open={Boolean(pendingInstanceDelete)}
+        title="Excluir instância?"
+        body={`Isso remove definitivamente a base, anexos e configurações da instância "${pendingInstanceDelete?.name || ""}". A instância admin não é afetada.`}
+        confirmLabel="Excluir instância"
+        busy={busy}
+        onCancel={() => {
+          setPendingInstanceDelete(null);
+          setInstanceDeleteConfirmation("");
+        }}
+        onConfirm={deleteInstance}
+        disabled={pendingInstanceDelete && instanceDeleteConfirmation !== pendingInstanceDelete.name}
+      >
+        <Input label="Digite o nome da instância" value={instanceDeleteConfirmation} onChange={setInstanceDeleteConfirmation} />
+      </ConfirmDialog>
+    </div>
+  );
+}
+
+function BackupSettings({ restoreFile, setRestoreFile, onRestore, busy }) {
+  return (
+    <div className="advanced-stack">
+      <div className="panel full">
+        <PanelTitle icon={Download} title="Backup completo" />
+        <p className="muted">
+          Gera um pacote ZIP com SQLite, anexos, mídias do Telegram e metadados. Na instância admin, o pacote inclui todas as instâncias ativas.
+        </p>
+        <a className="primary link-button" href="/api/backup/export">
+          <Download size={16} /> Exportar backup
+        </a>
+      </div>
+      <form className="form-panel full" onSubmit={onRestore}>
+        <h2>Restaurar backup</h2>
+        <label className="file-drop compact">
+          <Upload size={18} />
+          <span>{restoreFile?.name || "Selecionar arquivo .zip de backup"}</span>
+          <input type="file" accept=".zip,application/zip" onChange={(event) => setRestoreFile(event.target.files?.[0] || null)} />
+        </label>
+        <p className="muted">A restauração importa a base para a instância atual e copia anexos/mídias encontrados no pacote.</p>
+        <button className="primary" disabled={busy || !restoreFile}>{busy ? "Restaurando..." : "Restaurar na instância atual"}</button>
+      </form>
+    </div>
+  );
+}
+
+function AuditSettings({ rows, onRefresh }) {
+  return (
+    <div className="panel full">
+      <PanelTitle icon={ListChecks} title="Central de auditoria" />
+      <button className="ghost-button" type="button" onClick={onRefresh}><RefreshCw size={15} /> Atualizar</button>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Data</th>
+              <th>Ação</th>
+              <th>Entidade</th>
+              <th>ID</th>
+              <th>Detalhes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(rows || []).map((row) => (
+              <tr key={row.id}>
+                <td>{row.created_at}</td>
+                <td>{row.action}</td>
+                <td>{row.entity}</td>
+                <td>{row.entity_id}</td>
+                <td className="muted">{row.details}</td>
+              </tr>
+            ))}
+            {!rows?.length && <tr><td colSpan="5">Nenhum evento registrado ainda.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function HealthSettings({ value, onRefresh }) {
+  const bytes = (n) => `${(Number(n || 0) / 1024 / 1024).toFixed(2)} MB`;
+  const cards = [
+    ["Instância", value?.instance?.name || "-"],
+    ["SQLite", bytes(value?.sqlite?.bytes)],
+    ["Anexos", `${value?.attachments?.files || 0} arquivo(s), ${bytes(value?.attachments?.bytes)}`],
+    ["Telegram", value?.telegram?.enabled ? "Ativo" : "Inativo"],
+    ["Instâncias", `${value?.instances?.total || 0}/${value?.instances?.max || 4}`],
+    ["Porta API", value?.ports?.activeApiPort || "-"],
+  ];
+  return (
+    <div className="advanced-stack">
+      <div className="panel full">
+        <PanelTitle icon={Activity} title="Saúde do sistema" />
+        <button className="ghost-button" type="button" onClick={onRefresh}><RefreshCw size={15} /> Atualizar</button>
+        <div className="health-grid">
+          {cards.map(([label, body]) => (
+            <div className="path-info" key={label}>
+              <span>{label}</span>
+              <strong>{body}</strong>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="panel full">
+        <PanelTitle icon={Database} title="Caminhos em uso" />
+        <div className="form-grid">
+          <div className="path-info wide-field"><span>SQLite</span><strong>{value?.sqlite?.path || "-"}</strong></div>
+          <div className="path-info wide-field"><span>Anexos</span><strong>{value?.attachments?.effectiveDir || "-"}</strong></div>
+          <div className="path-info wide-field"><span>Mídias Telegram</span><strong>{value?.telegramMedia?.dir || "-"}</strong></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ReportsSettings({ period, setPeriod, reportUrl }) {
+  return (
+    <div className="panel full">
+      <PanelTitle icon={FileSpreadsheet} title="Relatórios exportáveis" />
+      <div className="form-grid">
+        <Input label="Mês" type="number" value={period.month} onChange={(month) => setPeriod({ ...period, month })} />
+        <Input label="Ano" type="number" value={period.year} onChange={(year) => setPeriod({ ...period, year })} />
+      </div>
+      <p className="muted">Exporta resumo, lançamentos, categorias, subcategorias, orçamentos e itens sem subcategoria.</p>
+      <a className="primary link-button" href={reportUrl}>
+        <FileSpreadsheet size={16} /> Baixar Excel mensal
+      </a>
+    </div>
+  );
+}
+
+function InstanceSettings({ value, form, setForm, busy, onSubmit, onDelete }) {
+  const instances = value?.instances || [];
+  const activeCount = instances.filter((instance) => instance.active !== false).length;
+  const limitReached = activeCount >= (value?.maxInstances || 4);
+  return (
+    <div className="instances-layout">
+      <form className="form-panel" onSubmit={onSubmit}>
+        <h2>Nova instância</h2>
+        <div className="form-grid">
+          <Input
+            label="Nome"
+            value={form.name}
+            onChange={(name) => setForm({ ...form, name })}
+          />
+          <Input
+            label="Senha inicial"
+            type="password"
+            value={form.password}
+            onChange={(password) => setForm({ ...form, password })}
+          />
+          <Input
+            label="Confirmar senha"
+            type="password"
+            value={form.confirmPassword}
+            onChange={(confirmPassword) => setForm({ ...form, confirmPassword })}
+          />
+        </div>
+        <p className="muted">Ao criar, o sistema gera um SQLite novo e copia categorias, subcategorias, contas, cartões e regras da instância admin. Lançamentos, OFX, anexos, parcelas, faturas, assinaturas e orçamentos não são copiados.</p>
+        <button className="primary" disabled={busy || limitReached}>{limitReached ? "Limite de instâncias atingido" : busy ? "Criando..." : "Criar instância"}</button>
+      </form>
+
+      <div className="panel full">
+        <PanelTitle icon={Database} title="Instâncias cadastradas" />
+        <div className="instance-summary">
+          <span>{activeCount} de {value?.maxInstances || 4} instâncias ativas</span>
+          <span>Admin preserva a base atual</span>
+        </div>
+        <div className="instance-list">
+          {instances.map((instance) => (
+            <div className="instance-card" key={instance.id}>
+              <div>
+                <strong>{instance.name}</strong>
+                <span>{instance.id}</span>
+              </div>
+              <div className="instance-card-actions">
+                <em>{instance.role === "admin" ? "Admin" : "Individual"}</em>
+                {instance.id !== "admin" && (
+                  <button type="button" className="icon-button danger" onClick={() => onDelete(instance)} title="Excluir instância">
+                    <Trash2 size={16} />
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TelegramSettings({ status, form, setForm, link, alertsConfig, setAlertsConfig, onSave, onGenerateCode, onSaveAlerts, onTestAlert, setMessage }) {
+  const expiresAt = link?.expiresAt ? new Date(link.expiresAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "";
+  const alerts = alertsConfig?.alerts || [];
+  const queries = alertsConfig?.queries || [];
+  const updateAlert = (id, patch) => {
+    setAlertsConfig({
+      ...alertsConfig,
+      alerts: alerts.map((alert) => alert.id === id ? { ...alert, ...patch } : alert),
+    });
+  };
+  const updateAlertSchedule = (id, patch) => {
+    setAlertsConfig({
+      ...alertsConfig,
+      alerts: alerts.map((alert) => alert.id === id ? { ...alert, schedule: { ...alert.schedule, ...patch } } : alert),
+    });
+  };
+  const readAudioDuration = (file) => new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const audio = new Audio();
+    audio.preload = "metadata";
+    audio.onloadedmetadata = () => {
+      URL.revokeObjectURL(url);
+      resolve(audio.duration || 0);
+    };
+    audio.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Não consegui validar a duração do áudio."));
+    };
+    audio.src = url;
+  });
+  const uploadAlertMedia = async (alert, file) => {
+    if (!file) return;
+    try {
+      const isAudio = file.type === "audio/mpeg" || file.name.toLowerCase().endsWith(".mp3");
+      const isGif = file.type === "image/gif" || file.name.toLowerCase().endsWith(".gif");
+      const isImage = file.type.startsWith("image/");
+      if (!isAudio && !isGif && !isImage) throw new Error("Use imagem, GIF ou áudio MP3.");
+      if (isAudio) {
+        const duration = await readAudioDuration(file);
+        if (duration > 5.2) throw new Error("O áudio precisa ter até 5 segundos.");
+      }
+      const body = new FormData();
+      body.append("file", file);
+      const response = await fetch("/api/telegram/alerts/media", { method: "POST", body });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Falha ao enviar mídia.");
+      updateAlert(alert.id, { media: data.media });
+      setMessage("Mídia anexada ao alerta.");
+    } catch (error) {
+      setMessage(error.message);
+    }
+  };
+  const addAlert = () => {
+    setAlertsConfig({
+      ...alertsConfig,
+      alerts: [
+        ...alerts,
+        {
+          id: crypto.randomUUID(),
+          title: "Novo alerta",
+          type: "daily-summary",
+          enabled: false,
+          message: "Consulta programada",
+          schedule: { mode: "daily", time: "08:00", days: [1, 2, 3, 4, 5], every: 1, unit: "days" },
+          lastSentAt: "",
+        },
+      ],
+    });
+  };
+  const removeAlert = (id) => setAlertsConfig({ ...alertsConfig, alerts: alerts.filter((alert) => alert.id !== id) });
+  const updateQuery = (command, patch) => {
+    setAlertsConfig({
+      ...alertsConfig,
+      queries: queries.map((query) => query.command === command ? { ...query, ...patch } : query),
+    });
+  };
+  const removeQuery = (command) => {
+    setAlertsConfig({
+      ...alertsConfig,
+      queries: queries.filter((query) => query.command !== command),
+    });
+  };
+  const addQuery = () => {
+    const nextIndex = queries.length + 1;
+    setAlertsConfig({
+      ...alertsConfig,
+      queries: [...queries, {
+        command: `/consulta${nextIndex}`,
+        title: "Mensagem personalizada",
+        type: "custom-message",
+        enabled: true,
+        customMessage: "Olá {{nome}}, esta é uma mensagem personalizada da instância {{instancia}}.",
+        mentionUser: true,
+      }],
+    });
+  };
+  const typeOptions = [
+    ["daily-summary", "Resumo do mês"],
+    ["budget-risk", "Orçamento em risco"],
+    ["pending-forecast", "Previstos pendentes"],
+    ["monthly-bills", "Faturas do mês"],
+    ["weekly-close", "Fechamento semanal"],
+  ];
+  const queryTypeOptions = [
+    ["summary", "Resumo do mês"],
+    ["budgets", "Orçamentos ativos"],
+    ["forecast", "Previstos pendentes"],
+    ["bills", "Faturas do mês"],
+    ["top-categories", "Top categorias"],
+    ["custom-message", "Mensagem personalizada"],
+  ];
+  const dayOptions = [[1, "Seg"], [2, "Ter"], [3, "Qua"], [4, "Qui"], [5, "Sex"], [6, "Sáb"], [0, "Dom"]];
+  return (
+    <div className="telegram-settings-stack">
+    <div className="telegram-layout">
+      <form className="form-panel" onSubmit={onSave}>
+        <div className="panel-title-row">
+          <PanelTitle icon={Bot} title="Telegram Bot" />
+        </div>
+        {status.isAdmin ? (
+          <>
+            <div className="form-grid">
+              <Input
+                label={status.tokenConfigured ? "Novo token do bot (opcional)" : "Token do bot"}
+                type="password"
+                value={form.token}
+                onChange={(token) => setForm({ ...form, token })}
+              />
+              <label className="checkbox-line telegram-toggle">
+                <input type="checkbox" checked={Boolean(form.enabled)} onChange={(e) => setForm({ ...form, enabled: e.target.checked })} />
+                <span>Ativar recebimento pelo Telegram</span>
+              </label>
+            </div>
+            <p className="muted">
+              O token fica salvo apenas na configuração local do sistema. Depois de ativar, cada instância precisa gerar seu próprio código de vínculo.
+            </p>
+            <button className="primary">Salvar Telegram</button>
+          </>
+        ) : (
+          <p className="muted">A configuração do token é feita pela instância Admin. Esta instância pode apenas gerar o vínculo do próprio chat.</p>
+        )}
+      </form>
+
+      <div className="panel full telegram-panel">
+        <PanelTitle icon={Send} title="Vincular esta instância" />
+        <div className="telegram-status-grid">
+          <div className={status.enabled ? "telegram-status ok" : "telegram-status off"}>
+            <span>Bot</span>
+            <strong>{status.enabled ? "Ativo" : "Desativado"}</strong>
+          </div>
+          <div className={status.tokenConfigured ? "telegram-status ok" : "telegram-status off"}>
+            <span>Token</span>
+            <strong>{status.tokenConfigured ? "Configurado" : "Pendente"}</strong>
+          </div>
+          <div className={status.linkedToCurrentInstance ? "telegram-status ok" : "telegram-status off"}>
+            <span>Chat atual</span>
+            <strong>{status.linkedToCurrentInstance ? "Vinculado" : "Sem vínculo"}</strong>
+          </div>
+        </div>
+
+        <div className="telegram-link-box">
+          <div>
+            <strong>Instância atual: {status.currentInstanceId}</strong>
+            <span>Gere um código e envie para o bot com o comando abaixo.</span>
+          </div>
+          <button type="button" className="primary" onClick={onGenerateCode} disabled={!status.tokenConfigured}>
+            Gerar código
+          </button>
+        </div>
+
+        {link && (
+          <div className="telegram-code-card">
+            <span>Código válido até {expiresAt}</span>
+            <strong>{link.code}</strong>
+            <code>/start {link.code}</code>
+            <p>Abra o bot no Telegram e envie esse comando. Depois disso, mensagens como "gastei 42,90 no mercado" viram lançamentos para revisão.</p>
+          </div>
+        )}
+      </div>
+    </div>
+      <form className="panel full telegram-alerts-panel" onSubmit={(e) => { e.preventDefault(); onSaveAlerts(alertsConfig); }}>
+        <div className="dashboard-settings-head">
+          <PanelTitle icon={CalendarClock} title="Alertas do Bot" />
+          <div className="dashboard-summary">
+            <span>{alerts.filter((alert) => alert.enabled).length} ativo(s)</span>
+            <button type="button" className="secondary" onClick={addAlert}>Adicionar alerta</button>
+          </div>
+        </div>
+        <div className="telegram-alert-grid">
+          {alerts.map((alert) => (
+            <div className="telegram-alert-card" key={alert.id}>
+              <div className="telegram-alert-head">
+                <label className="checkbox-line">
+                  <input type="checkbox" checked={Boolean(alert.enabled)} onChange={(e) => updateAlert(alert.id, { enabled: e.target.checked })} />
+                  <span>Ativo</span>
+                </label>
+                <button type="button" className="icon-button danger" title="Remover alerta" onClick={() => removeAlert(alert.id)}>
+                  <Trash2 size={15} />
+                </button>
+              </div>
+              <div className="form-grid">
+                <Input label="Nome do alerta" value={alert.title} onChange={(title) => updateAlert(alert.id, { title })} />
+                <Select label="Informação" value={alert.type} onChange={(type) => updateAlert(alert.id, { type })} options={typeOptions} />
+                <Select
+                  label="Agenda"
+                  value={alert.schedule?.mode || "daily"}
+                  onChange={(mode) => updateAlertSchedule(alert.id, { mode })}
+                  options={[["interval", "Timer por intervalo"], ["daily", "Todos os dias"], ["weekly", "Dias da semana"]]}
+                />
+                {alert.schedule?.mode === "interval" ? (
+                  <>
+                    <Input label="A cada" type="number" value={alert.schedule?.every || 1} onChange={(every) => updateAlertSchedule(alert.id, { every })} />
+                    <Select
+                      label="Unidade"
+                      value={alert.schedule?.unit || "days"}
+                      onChange={(unit) => updateAlertSchedule(alert.id, { unit })}
+                      options={[["minutes", "Minutos"], ["hours", "Horas"], ["days", "Dias"], ["weeks", "Semanas"]]}
+                    />
+                  </>
+                ) : (
+                  <Input label="Horário" type="time" value={alert.schedule?.time || "08:00"} onChange={(time) => updateAlertSchedule(alert.id, { time })} />
+                )}
+                <Input className="wide-field" label="Mensagem" value={alert.message} onChange={(message) => updateAlert(alert.id, { message })} />
+              </div>
+              <div className="telegram-media-box">
+                <div>
+                  <strong>{alert.media ? alert.media.originalName : "Sem mídia anexada"}</strong>
+                  <span>Imagem, GIF ou MP3 de até 5 segundos.</span>
+                </div>
+                <div className="telegram-media-actions">
+                  <label className="secondary file-action">
+                    <Paperclip size={15} />
+                    <span>Anexar</span>
+                    <input
+                      type="file"
+                      accept="image/*,.gif,audio/mpeg,.mp3"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = "";
+                        uploadAlertMedia(alert, file);
+                      }}
+                    />
+                  </label>
+                  {alert.media && (
+                    <button type="button" className="secondary" onClick={() => updateAlert(alert.id, { media: null })}>
+                      Remover mídia
+                    </button>
+                  )}
+                </div>
+              </div>
+              {alert.schedule?.mode !== "interval" && (
+                <div className="telegram-day-grid">
+                  {dayOptions.map(([day, label]) => {
+                    const selected = (alert.schedule?.days || []).includes(day);
+                    return (
+                      <button
+                        type="button"
+                        className={selected ? "active" : ""}
+                        key={day}
+                        onClick={() => {
+                          const days = alert.schedule?.days || [];
+                          updateAlertSchedule(alert.id, { days: selected ? days.filter((item) => item !== day) : [...days, day] });
+                        }}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              <div className="telegram-alert-actions">
+                <span>{alert.lastSentAt ? `Último envio: ${new Date(alert.lastSentAt).toLocaleString("pt-BR")}` : "Ainda não enviado"}</span>
+                <button type="button" className="secondary" onClick={() => onTestAlert(alert)} disabled={!status.linkedToCurrentInstance}>Testar</button>
+              </div>
+            </div>
+          ))}
+        </div>
+        <button className="primary">Salvar alertas do bot</button>
+      </form>
+
+      <form className="panel full telegram-alerts-panel" onSubmit={(e) => { e.preventDefault(); onSaveAlerts(alertsConfig); }}>
+        <div className="dashboard-settings-head">
+          <PanelTitle icon={ListChecks} title="Consultas pelo Telegram" />
+          <div className="dashboard-summary">
+            <span>{queries.filter((query) => query.enabled !== false).length} comando(s)</span>
+            <button type="button" className="secondary" onClick={addQuery}>Adicionar consulta</button>
+          </div>
+        </div>
+        <div className="telegram-query-grid">
+          {queries.map((query) => (
+            <div className="telegram-query-row" key={query.command}>
+              <label className="checkbox-line">
+                <input type="checkbox" checked={query.enabled !== false} onChange={(e) => updateQuery(query.command, { enabled: e.target.checked })} />
+              </label>
+              <Input label="Comando" value={query.command} onChange={(command) => updateQuery(query.command, { command })} />
+              <Input label="Nome" value={query.title} onChange={(title) => updateQuery(query.command, { title })} />
+              <Select label="Resultado" value={query.type} onChange={(type) => updateQuery(query.command, { type })} options={queryTypeOptions} />
+              <button
+                type="button"
+                className="icon-button danger telegram-query-delete"
+                title="Excluir consulta"
+                onClick={() => removeQuery(query.command)}
+                disabled={queries.length <= 1}
+              >
+                <Trash2 size={15} />
+              </button>
+              {query.type === "custom-message" && (
+                <>
+                  <label className="wide-field query-message-control">
+                    <span>Mensagem personalizada</span>
+                    <textarea
+                      value={query.customMessage || ""}
+                      onChange={(e) => updateQuery(query.command, { customMessage: e.target.value })}
+                      rows={3}
+                      placeholder="Use {{nome}}, {{usuario}}, {{data}}, {{hora}}, {{mes}}, {{instancia}} ou {{comando}}."
+                    />
+                  </label>
+                  <label className="checkbox-line wide-field query-mention-control">
+                    <input type="checkbox" checked={Boolean(query.mentionUser)} onChange={(e) => updateQuery(query.command, { mentionUser: e.target.checked })} />
+                    <span>Mencionar quem chamou o comando</span>
+                  </label>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+        <p className="muted">Os comandos padrão já respondem com dados reais da instância vinculada: /resumo, /orcamentos, /previstos, /faturas e /top.</p>
+        <button className="primary">Salvar consultas</button>
+      </form>
     </div>
   );
 }
@@ -2124,6 +2947,7 @@ function DashboardSettings({ appearance, onChange, setMessage }) {
   const topChartOptions = [...chartOptions, ["donut", "Rosca"], ["radial", "Radial"]];
   const monthlyOptions = [["area", "Área"], ["bar", "Barras agrupadas"], ["line", "Linhas"], ["composed", "Barras + linha"]];
   const resultOptions = [["Despesa", "Somente despesas"], ["Receita", "Somente receitas"], ["Fatura", "Somente faturas"], ["Todos", "Todos os tipos"]];
+  const statusOptions = [["Realizado", "Somente realizados"], ["Previsto", "Somente previstos"], ["Todos", "Todos os status"]];
   const activeBlocks = blockOptions.filter(([key]) => current.dashboardBlocks[key]).length;
   const activeExtras = extraOptions.filter(([key]) => current.extraDashboards[key]).length;
   return (
@@ -2181,6 +3005,12 @@ function DashboardSettings({ appearance, onChange, setMessage }) {
             value={current.topLimit}
             onChange={(topLimit) => onChange({ ...current, topLimit: Number(topLimit) })}
             options={[[5, "Top 5"], [10, "Top 10"]]}
+          />
+          <Select
+            label="Fluxo Mensal considera"
+            value={current.dashboardRules.monthlyStatus}
+            onChange={(monthlyStatus) => setRule("monthlyStatus", monthlyStatus)}
+            options={statusOptions}
           />
         </div>
       </div>
@@ -2652,8 +3482,8 @@ function RuleMap({ config, onSaved, setMessage }) {
   );
 }
 
-function TransactionTable({ rows, compact, onEdit, onDelete }) {
-  const showActions = Boolean(onEdit || onDelete);
+function TransactionTable({ rows, compact, onEdit, onDelete, onSetRealized }) {
+  const showActions = Boolean(onEdit || onDelete || onSetRealized);
   return (
     <div className="table-wrap">
       <table>
@@ -2678,12 +3508,25 @@ function TransactionTable({ rows, compact, onEdit, onDelete }) {
               <td>{t.institution}</td>
               <td>{t.category || t.result || "Sem categoria"}</td>
               <td className={!t.subcategory ? "missing-subcategory" : ""}>{t.subcategory || "Sem subcategoria"}</td>
-              <td><em>{t.status}</em></td>
+              <td>
+                {t.status === "Previsto" ? (
+                  <em className="status-forecast" title="Este item está aguardando pagamento ou confirmação.">
+                    {t.status}<span>!</span>
+                  </em>
+                ) : (
+                  <em>{t.status}</em>
+                )}
+              </td>
               <td><AttachmentLinks row={t} /></td>
               <td className={t.signed_amount >= 0 ? "pos" : "neg"}>{money.format(t.amount)}</td>
               {showActions && (
                 <td>
                   <div className="row-actions">
+                    {onSetRealized && t.status === "Previsto" && (
+                      <button type="button" className="secondary realize-button" onClick={() => onSetRealized(t)} title="Marcar como realizado">
+                        Realizar
+                      </button>
+                    )}
                     {onEdit && <button type="button" className="icon-button" onClick={() => onEdit(t)} title="Editar"><Pencil size={15} /></button>}
                     {onDelete && <button type="button" className="icon-button danger" onClick={() => onDelete(t)} title="Excluir"><Trash2 size={15} /></button>}
                   </div>
@@ -2894,3 +3737,4 @@ function jsonHeaders() {
 }
 
 createRoot(document.getElementById("root")).render(<App />);
+
