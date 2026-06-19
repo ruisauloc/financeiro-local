@@ -1,6 +1,6 @@
 {
   "name": "financeiro",
-  "version": "1.0.20",
+  "version": "1.0.21",
   "description": "Sistema financeiro web local migrado da planilha XLSM.",
   "homepage": "https://github.com/ruisauloc/financeiro-local",
   "main": "electron/main.cjs",
@@ -87,6 +87,7 @@
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "recharts": "^3.8.1",
+    "sharp": "^0.34.5",
     "typescript": "^6.0.3",
     "vite": "^8.0.13",
     "xlsx": "^0.18.5"

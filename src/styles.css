@@ -1520,6 +1520,27 @@ input, select {
   gap: 12px;
 }
 
+.install-command-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.install-command {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--app-border) 72%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--app-surface) 82%, transparent);
+}
+
+.install-command code {
+  overflow-wrap: anywhere;
+  white-space: normal;
+  color: var(--app-primary);
+}
+
 .file-drop.compact {
   min-height: 92px;
 }

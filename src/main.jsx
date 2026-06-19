@@ -1797,6 +1797,8 @@ function AdvancedSettings({ onSaved, setMessage, appearance, onAppearanceChange 
   const [auditRows, setAuditRows] = useState([]);
   const [restoreFile, setRestoreFile] = useState(null);
   const [reportPeriod, setReportPeriod] = useState({ year: new Date().getFullYear(), month: new Date().getMonth() + 1 });
+  const [localAi, setLocalAi] = useState(null);
+  const [localAiScript, setLocalAiScript] = useState(null);
   const [settings, setSettings] = useState({
     attachmentsDir: "",
     effectiveAttachmentsDir: "",
@@ -1852,6 +1854,20 @@ function AdvancedSettings({ onSaved, setMessage, appearance, onAppearanceChange 
       setMessage(error.message);
     }
   };
+  const loadLocalAi = async () => {
+    try {
+      setLocalAi(await api("/local-ai/status"));
+    } catch (error) {
+      setMessage(error.message);
+    }
+  };
+  const loadLocalAiScript = async () => {
+    try {
+      setLocalAiScript(await api("/local-ai/install-script"));
+    } catch (error) {
+      setMessage(error.message);
+    }
+  };
   useEffect(() => {
     loadSettings().catch((e) => setMessage(e.message));
     loadInstances();
@@ -1859,6 +1875,8 @@ function AdvancedSettings({ onSaved, setMessage, appearance, onAppearanceChange 
     loadTelegramAlerts();
     loadHealth();
     loadAudit();
+    loadLocalAi();
+    loadLocalAiScript();
   }, []);
 
   const clearBase = async (e) => {
@@ -2046,6 +2064,36 @@ function AdvancedSettings({ onSaved, setMessage, appearance, onAppearanceChange 
 
   const reportUrl = `/api/reports/monthly.xlsx?year=${reportPeriod.year}&month=${reportPeriod.month}`;
 
+  const scanLocalAi = async () => {
+    setBusy(true);
+    try {
+      const result = await api("/local-ai/scan", { method: "POST" });
+      await loadLocalAi();
+      setMessage(result.found ? "IA local encontrada e vinculada." : "Nenhuma Ollama local encontrada em localhost:11434.");
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveLocalAi = async (config) => {
+    setBusy(true);
+    try {
+      const saved = await api("/local-ai/save", {
+        method: "POST",
+        headers: jsonHeaders(),
+        body: JSON.stringify(config),
+      });
+      await loadLocalAi();
+      setMessage(saved.configured.enabled ? "Configuração de IA local salva." : "IA local desativada.");
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const options = [
     ["Backup local", "Exportar o SQLite e gerar pacote de segurança."],
     ["Importação em lote", "Processar vários OFX de uma pasta de uma vez."],
@@ -2064,6 +2112,7 @@ function AdvancedSettings({ onSaved, setMessage, appearance, onAppearanceChange 
         <button className={tab === "security" ? "active" : ""} onClick={() => setTab("security")}>Segurança</button>
         {settings.instance?.role === "admin" && <button className={tab === "instances" ? "active" : ""} onClick={() => setTab("instances")}>Instâncias</button>}
         <button className={tab === "telegram" ? "active" : ""} onClick={() => setTab("telegram")}>Telegram Bot</button>
+        <button className={tab === "localAi" ? "active" : ""} onClick={() => { setTab("localAi"); loadLocalAi(); }}>IA Local</button>
         <button className={tab === "connections" ? "active" : ""} onClick={() => setTab("connections")}>Conexões</button>
         <button className={tab === "appearance" ? "active" : ""} onClick={() => setTab("appearance")}>Personalização</button>
         <button className={tab === "dashboards" ? "active" : ""} onClick={() => setTab("dashboards")}>Dashboards</button>
@@ -2102,6 +2151,16 @@ function AdvancedSettings({ onSaved, setMessage, appearance, onAppearanceChange 
           onSaveAlerts={saveTelegramAlerts}
           onTestAlert={testTelegramAlert}
           setMessage={setMessage}
+        />
+      )}
+      {tab === "localAi" && (
+        <LocalAiSettings
+          value={localAi}
+          script={localAiScript}
+          busy={busy}
+          onScan={scanLocalAi}
+          onRefresh={loadLocalAi}
+          onSave={saveLocalAi}
         />
       )}
       {tab === "appearance" && (
@@ -2317,6 +2376,99 @@ function BackupSettings({ restoreFile, setRestoreFile, onRestore, busy }) {
         <p className="muted">A restauração importa a base para a instância atual e copia anexos/mídias encontrados no pacote.</p>
         <button className="primary" disabled={busy || !restoreFile}>{busy ? "Restaurando..." : "Restaurar na instância atual"}</button>
       </form>
+    </div>
+  );
+}
+
+function LocalAiSettings({ value, script, busy, onScan, onRefresh, onSave }) {
+  const configured = value?.configured || { enabled: false, provider: "ollama", baseUrl: "http://127.0.0.1:11434", model: "", autoUseWhenAvailable: false };
+  const probe = value?.probe || { found: false, models: [] };
+  const [draft, setDraft] = useState(configured);
+  useEffect(() => {
+    setDraft(configured);
+  }, [JSON.stringify(configured)]);
+  const models = probe.models || [];
+  const installLines = [
+    ["Windows", script?.windows],
+    ["Linux", script?.linux],
+    ["macOS", script?.macos],
+  ].filter(([, command]) => command);
+
+  return (
+    <div className="advanced-stack">
+      <div className="panel full">
+        <PanelTitle icon={Bot} title="IA Local" />
+        <p className="muted">
+          O sistema já usa um motor local para o agente gráfico e classificação. Esta área deixa a ponte preparada para vincular uma IA local, como Ollama, sem tornar a IA obrigatória.
+        </p>
+        <div className="telegram-status-grid">
+          <div className={probe.found ? "telegram-status ok" : "telegram-status off"}>
+            <span>Ollama</span>
+            <strong>{probe.found ? "Encontrada" : "Não encontrada"}</strong>
+          </div>
+          <div className="telegram-status">
+            <span>URL</span>
+            <strong>{configured.baseUrl}</strong>
+          </div>
+          <div className={value?.ready ? "telegram-status ok" : "telegram-status off"}>
+            <span>Modelos</span>
+            <strong>{models.length || 0}</strong>
+          </div>
+        </div>
+        {probe.error && <p className="muted">Último teste: {probe.error}</p>}
+        <div className="connection-actions">
+          <button className="primary" type="button" onClick={onScan} disabled={busy}>{busy ? "Buscando..." : "Buscar IA local"}</button>
+          <button className="secondary" type="button" onClick={onRefresh}>Testar conexão</button>
+        </div>
+      </div>
+
+      <form className="form-panel full" onSubmit={(event) => { event.preventDefault(); onSave(draft); }}>
+        <h2>Configuração</h2>
+        <div className="form-grid">
+          <Select label="Provedor" value={draft.provider || "ollama"} onChange={(provider) => setDraft({ ...draft, provider })} options={[["ollama", "Ollama"]]} />
+          <Input className="wide-field" label="URL local" value={draft.baseUrl || ""} onChange={(baseUrl) => setDraft({ ...draft, baseUrl })} />
+          <Select
+            label="Modelo"
+            value={draft.model || ""}
+            onChange={(model) => setDraft({ ...draft, model })}
+            options={[["", models.length ? "Selecionar" : "Nenhum modelo encontrado"], ...models.map((model) => [model, model])]}
+          />
+          <label className="checkbox-line">
+            <input type="checkbox" checked={Boolean(draft.enabled)} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })} />
+            <span>Deixar vínculo de IA local ativo para recursos futuros</span>
+          </label>
+          <label className="checkbox-line">
+            <input type="checkbox" checked={Boolean(draft.autoUseWhenAvailable)} onChange={(event) => setDraft({ ...draft, autoUseWhenAvailable: event.target.checked })} />
+            <span>Usar IA automaticamente quando o motor local não entender um pedido</span>
+          </label>
+        </div>
+        <p className="muted">Por enquanto, o agente gráfico funciona sem IA. Quando ativarmos a interpretação por Ollama, esta configuração já estará pronta.</p>
+        <button className="primary" disabled={busy}>{busy ? "Salvando..." : "Salvar IA local"}</button>
+      </form>
+
+      <div className="panel full">
+        <PanelTitle icon={Download} title="Instalação assistida" />
+        <p className="muted">{script?.note || "Instale a Ollama localmente e volte para buscar a IA."}</p>
+        <div className="install-command-grid">
+          {installLines.map(([label, command]) => (
+            <div className="install-command" key={label}>
+              <strong>{label}</strong>
+              <code>{command}</code>
+            </div>
+          ))}
+        </div>
+        {script?.afterInstall?.length ? (
+          <div className="advanced-options">
+            {script.afterInstall.map((line) => (
+              <div className="advanced-option" key={line}>
+                <strong>Depois</strong>
+                <span>{line}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        {script?.downloadUrl && <a className="secondary link-button" href={script.downloadUrl} target="_blank" rel="noreferrer">Abrir site da Ollama</a>}
+      </div>
     </div>
   );
 }

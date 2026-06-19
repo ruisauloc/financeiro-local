@@ -19,7 +19,13 @@ taskkill /F /IM "Financeiro Local 1.0.17.exe" >nul 2>nul
 taskkill /F /IM "Financeiro Local 1.0.18.exe" >nul 2>nul
 taskkill /F /IM "Financeiro Local 1.0.19.exe" >nul 2>nul
 taskkill /F /IM "Financeiro Local 1.0.20.exe" >nul 2>nul
+taskkill /F /IM "Financeiro Local 1.0.21.exe" >nul 2>nul
 taskkill /F /IM "Financeiro Local.exe" >nul 2>nul
+
+if exist "%APP_DIR%release\Financeiro Local 1.0.21.exe" (
+  start "" /D "%APP_DIR%" "%APP_DIR%release\Financeiro Local 1.0.21.exe"
+  exit /b 0
+)
 
 if exist "%APP_DIR%release\Financeiro Local 1.0.20.exe" (
   start "" /D "%APP_DIR%" "%APP_DIR%release\Financeiro Local 1.0.20.exe"

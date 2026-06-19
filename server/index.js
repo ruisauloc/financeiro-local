@@ -9,6 +9,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import Database from "better-sqlite3";
 import * as XLSX from "xlsx";
 import AdmZip from "adm-zip";
+import sharp from "sharp";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
@@ -822,6 +823,47 @@ function getBudgetAlertSettings() {
   } catch {
     return { levels: [50, 75, 95] };
   }
+}
+
+function getLocalAiConfig() {
+  try {
+    return {
+      enabled: false,
+      provider: "ollama",
+      baseUrl: "http://127.0.0.1:11434",
+      model: "",
+      autoUseWhenAvailable: false,
+      ...(JSON.parse(getRootSetting("localAiConfig", "{}") || "{}")),
+    };
+  } catch {
+    return { enabled: false, provider: "ollama", baseUrl: "http://127.0.0.1:11434", model: "", autoUseWhenAvailable: false };
+  }
+}
+
+function saveLocalAiConfig(config = {}) {
+  const current = getLocalAiConfig();
+  const next = {
+    ...current,
+    enabled: Boolean(config.enabled),
+    provider: config.provider === "ollama" ? "ollama" : "ollama",
+    baseUrl: String(config.baseUrl || current.baseUrl || "http://127.0.0.1:11434").replace(/\/+$/, ""),
+    model: String(config.model || "").trim(),
+    autoUseWhenAvailable: Boolean(config.autoUseWhenAvailable),
+  };
+  setRootSetting("localAiConfig", JSON.stringify(next));
+  return next;
+}
+
+async function probeOllama(baseUrl = "http://127.0.0.1:11434") {
+  const cleanUrl = String(baseUrl || "").replace(/\/+$/, "") || "http://127.0.0.1:11434";
+  const response = await fetch(`${cleanUrl}/api/tags`, { method: "GET", signal: AbortSignal.timeout(1800) });
+  if (!response.ok) throw new Error(`Ollama respondeu HTTP ${response.status}.`);
+  const data = await response.json();
+  return {
+    found: true,
+    baseUrl: cleanUrl,
+    models: Array.isArray(data.models) ? data.models.map((model) => model.name).filter(Boolean) : [],
+  };
 }
 
 function budgetStatus(spent, amount, settings = getBudgetAlertSettings()) {
@@ -2017,6 +2059,60 @@ app.post("/api/telegram/alerts/media", upload.single("file"), (req, res) => {
   });
 });
 
+app.get("/api/local-ai/status", async (_req, res) => {
+  const config = getLocalAiConfig();
+  try {
+    const probe = await probeOllama(config.baseUrl);
+    res.json({ configured: config, probe, ready: probe.found && probe.models.length > 0 });
+  } catch (error) {
+    res.json({ configured: config, probe: { found: false, baseUrl: config.baseUrl, models: [], error: error.message }, ready: false });
+  }
+});
+
+app.post("/api/local-ai/save", (req, res) => {
+  const saved = saveLocalAiConfig(req.body || {});
+  auditLog("local_ai_saved", "local_ai", saved.provider, { enabled: saved.enabled, baseUrl: saved.baseUrl, model: saved.model });
+  res.json({ ok: true, configured: saved });
+});
+
+app.post("/api/local-ai/scan", async (_req, res) => {
+  const candidates = [
+    "http://127.0.0.1:11434",
+    "http://localhost:11434",
+    "http://host.docker.internal:11434",
+  ];
+  const results = [];
+  for (const candidate of candidates) {
+    try {
+      results.push(await probeOllama(candidate));
+    } catch (error) {
+      results.push({ found: false, baseUrl: candidate, models: [], error: error.message });
+    }
+  }
+  const found = results.find((item) => item.found);
+  if (found) {
+    const saved = saveLocalAiConfig({ enabled: true, provider: "ollama", baseUrl: found.baseUrl, model: found.models[0] || "", autoUseWhenAvailable: false });
+    return res.json({ ok: true, found: true, configured: saved, results });
+  }
+  res.json({ ok: true, found: false, configured: getLocalAiConfig(), results });
+});
+
+app.get("/api/local-ai/install-script", (_req, res) => {
+  res.json({
+    provider: "ollama",
+    note: "O sistema ainda funciona sem IA. Estes comandos instalam a Ollama local para uso futuro do interpretador inteligente.",
+    windows: "winget install Ollama.Ollama",
+    linux: "curl -fsSL https://ollama.com/install.sh | sh",
+    macos: "brew install ollama",
+    afterInstall: [
+      "ollama serve",
+      "ollama pull llama3.2:3b",
+      "Volte em Avançado > IA Local e clique em Buscar IA local.",
+    ],
+    downloadUrl: "https://ollama.com/download",
+  });
+});
+
 app.get("/api/connections/current", (_req, res) => {
   const saved = getSetting("connectionConfig", "");
   res.json({
@@ -3100,6 +3196,27 @@ async function sendTelegramMedia(chatId, media, caption = "") {
   }
 }
 
+async function sendTelegramPhotoBuffer(chatId, buffer, filename, caption = "") {
+  const config = getTelegramConfig();
+  if (!config.token) return null;
+  const body = new FormData();
+  body.append("chat_id", chatId);
+  if (caption) {
+    body.append("caption", caption.slice(0, 1000));
+    body.append("parse_mode", "HTML");
+  }
+  body.append("photo", new Blob([buffer], { type: "image/png" }), filename || "grafico.png");
+  try {
+    const response = await fetch(telegramApiUrl("sendPhoto"), { method: "POST", body });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.ok === false) throw new Error(data.description || "Falha ao enviar gráfico ao Telegram.");
+    return data.result;
+  } catch (error) {
+    console.warn("Telegram chart:", error.message);
+    return null;
+  }
+}
+
 async function sendTelegramAlert(chatId, alert, message) {
   if (!alert?.media) return sendTelegramMessage(chatId, message);
   if (message.length > 1000) {
@@ -3132,6 +3249,230 @@ function defaultTelegramInstitutionId(result) {
   if (account) return account.id;
   const any = one("SELECT id FROM institutions ORDER BY id LIMIT 1");
   return any?.id || null;
+}
+
+function isTelegramChartRequest(text) {
+  const normalized = normalizeText(text);
+  return /\b(grafico|grafica|chart|comparativo|comparar|evolucao|evolucao|visual|imagem)\b/.test(normalized)
+    && /\b(receita|despesa|gasto|categoria|subcategoria|orcamento|fatura|saldo|dia|diario|mes|mensal|30 dias|ultimos)\b/.test(normalized);
+}
+
+function dateOnly(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function addDays(date, days) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function monthRangeFromOffset(offset = 0) {
+  const now = new Date();
+  const startDate = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+  const endDate = new Date(now.getFullYear(), now.getMonth() + offset + 1, 0);
+  return { start: dateOnly(startDate), end: dateOnly(endDate), year: startDate.getFullYear(), month: startDate.getMonth() + 1 };
+}
+
+function inferChartSpec(text) {
+  const normalized = normalizeText(text);
+  const monthsMatch = normalized.match(/(?:ultimos|ultimas|últimos|últimas)\s+(\d{1,2})\s+m(?:eses)?/);
+  const daysMatch = normalized.match(/(?:ultimos|ultimas|últimos|últimas)\s+(\d{1,3})\s+dias?/);
+  const hasDaily = /\b(dia|diario|diaria|por dia|30 dias)\b/.test(normalized);
+  const hasCategory = /\b(categoria|categorias|top)\b/.test(normalized);
+  const hasSubcategory = /\b(subcategoria|subcategorias)\b/.test(normalized);
+  const hasBudget = /\b(orcamento|orçamento|orcamentos|orçamentos)\b/.test(normalized);
+  const hasBill = /\b(fatura|faturas|cartao|cartão)\b/.test(normalized);
+  const hasMonthly = /\b(mes a mes|mês a mês|mensal|por mes|por mês|ano|12 meses|6 meses)\b/.test(normalized);
+  const now = new Date();
+
+  if (hasBudget) return { kind: "budget", title: "Orçamento vs gasto", start: dateOnly(addDays(now, -365)), end: dateOnly(now) };
+
+  if (hasCategory || hasSubcategory) {
+    const range = monthRangeFromOffset(normalized.includes("mes passado") || normalized.includes("mês passado") ? -1 : 0);
+    return {
+      kind: hasSubcategory ? "top-subcategories" : "top-categories",
+      title: hasSubcategory ? "Top subcategorias de despesa" : "Top categorias de despesa",
+      start: range.start,
+      end: range.end,
+      limit: 10,
+    };
+  }
+
+  if (hasDaily || daysMatch) {
+    const days = Math.min(120, Math.max(7, Number(daysMatch?.[1] || 30)));
+    return { kind: "daily-flow", title: `Receitas x despesas por dia - últimos ${days} dias`, start: dateOnly(addDays(now, -(days - 1))), end: dateOnly(now) };
+  }
+
+  if (hasBill) {
+    const months = Math.min(24, Math.max(3, Number(monthsMatch?.[1] || 6)));
+    return { kind: "monthly-bills", title: `Faturas mês a mês - últimos ${months} meses`, months };
+  }
+
+  if (hasMonthly || monthsMatch || normalized.includes("receita") || normalized.includes("despesa") || normalized.includes("gasto")) {
+    const months = Math.min(24, Math.max(3, Number(monthsMatch?.[1] || (normalized.includes("ano") ? 12 : 6))));
+    return { kind: "monthly-comparison", title: `Receitas x despesas - últimos ${months} meses`, months };
+  }
+
+  return null;
+}
+
+function chartMonthSeries(months) {
+  const now = new Date();
+  const series = [];
+  for (let index = months - 1; index >= 0; index--) {
+    const date = new Date(now.getFullYear(), now.getMonth() - index, 1);
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+    series.push({ key, label: monthName(`${key}-01`) });
+  }
+  return series;
+}
+
+function chartDataForSpec(spec) {
+  if (spec.kind === "monthly-comparison") {
+    const months = chartMonthSeries(spec.months);
+    const rows = all(`
+      SELECT substr(date,1,7) period,
+        COALESCE(SUM(CASE WHEN result='Receita' THEN amount END),0) receita,
+        COALESCE(SUM(CASE WHEN result='Despesa' THEN amount END),0) despesa
+      FROM transactions
+      WHERE status='Realizado' AND result IN ('Receita','Despesa')
+      GROUP BY substr(date,1,7)
+    `);
+    const byPeriod = new Map(rows.map((row) => [row.period, row]));
+    return months.map((item) => ({ label: item.label, receita: Number(byPeriod.get(item.key)?.receita || 0), despesa: Number(byPeriod.get(item.key)?.despesa || 0) }));
+  }
+
+  if (spec.kind === "daily-flow") {
+    const rows = all(`
+      SELECT date,
+        COALESCE(SUM(CASE WHEN result='Receita' THEN amount END),0) receita,
+        COALESCE(SUM(CASE WHEN result='Despesa' THEN amount END),0) despesa
+      FROM transactions
+      WHERE status='Realizado' AND result IN ('Receita','Despesa') AND date BETWEEN ? AND ?
+      GROUP BY date
+      ORDER BY date
+    `, [spec.start, spec.end]);
+    const byDate = new Map(rows.map((row) => [row.date, row]));
+    const data = [];
+    let cursor = new Date(`${spec.start}T12:00:00`);
+    const end = new Date(`${spec.end}T12:00:00`);
+    while (cursor <= end) {
+      const key = dateOnly(cursor);
+      data.push({ label: key.slice(5), receita: Number(byDate.get(key)?.receita || 0), despesa: Number(byDate.get(key)?.despesa || 0) });
+      cursor = addDays(cursor, 1);
+    }
+    return data;
+  }
+
+  if (spec.kind === "top-categories" || spec.kind === "top-subcategories") {
+    const field = spec.kind === "top-subcategories" ? "COALESCE(s.name,'Sem subcategoria')" : "COALESCE(c.name,'Sem categoria')";
+    return all(`
+      SELECT ${field} label, SUM(t.amount) despesa
+      FROM transactions t
+      LEFT JOIN categories c ON c.id=t.category_id
+      LEFT JOIN subcategories s ON s.id=t.subcategory_id
+      WHERE t.status='Realizado' AND t.result='Despesa' AND t.date BETWEEN ? AND ?
+      GROUP BY label
+      ORDER BY despesa DESC
+      LIMIT ?
+    `, [spec.start, spec.end, spec.limit || 10]).map((row) => ({ label: row.label, despesa: Number(row.despesa || 0) }));
+  }
+
+  if (spec.kind === "monthly-bills") {
+    const months = chartMonthSeries(spec.months);
+    const rows = all(`
+      SELECT substr(date,1,7) period, COALESCE(SUM(amount),0) fatura
+      FROM transactions
+      WHERE status='Realizado' AND result='Fatura'
+      GROUP BY substr(date,1,7)
+    `);
+    const byPeriod = new Map(rows.map((row) => [row.period, row]));
+    return months.map((item) => ({ label: item.label, fatura: Number(byPeriod.get(item.key)?.fatura || 0) }));
+  }
+
+  if (spec.kind === "budget") {
+    return budgetRows().filter((row) => row.status === "Ativo").slice(0, 10).map((row) => ({ label: row.name, despesa: Number(row.spent || 0), limite: Number(row.amount || 0) }));
+  }
+
+  return [];
+}
+
+function svgText(text, x, y, size = 24, color = "#e7eef7", weight = 600, anchor = "start") {
+  return `<text x="${x}" y="${y}" font-size="${size}" fill="${color}" font-family="Inter, Arial, sans-serif" font-weight="${weight}" text-anchor="${anchor}">${escapeHtml(text)}</text>`;
+}
+
+function renderChartSvg(spec, data) {
+  const width = 1600;
+  const height = 1000;
+  const padding = { left: 110, right: 70, top: 150, bottom: 150 };
+  const plotW = width - padding.left - padding.right;
+  const plotH = height - padding.top - padding.bottom;
+  const seriesKeys = spec.kind === "budget" ? ["despesa", "limite"] : spec.kind === "monthly-bills" ? ["fatura"] : spec.kind.includes("top-") ? ["despesa"] : ["receita", "despesa"];
+  const colors = { receita: "#2dd4bf", despesa: "#fb7185", fatura: "#f59e0b", limite: "#60a5fa" };
+  const max = Math.max(1, ...data.flatMap((row) => seriesKeys.map((key) => Number(row[key] || 0))));
+  const yScale = (value) => padding.top + plotH - (Number(value || 0) / max) * plotH;
+  const grid = Array.from({ length: 5 }, (_, index) => {
+    const value = (max / 4) * index;
+    const y = yScale(value);
+    return `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y}" y2="${y}" stroke="#263341" stroke-dasharray="8 10"/><text x="90" y="${y + 7}" fill="#8ca0b3" font-size="20" text-anchor="end">${Math.round(value).toLocaleString("pt-BR")}</text>`;
+  }).join("");
+  const groupW = plotW / Math.max(1, data.length);
+  const barW = Math.min(46, Math.max(10, groupW / (seriesKeys.length + 1.2)));
+  const bars = data.map((row, index) => {
+    const center = padding.left + groupW * index + groupW / 2;
+    const items = seriesKeys.map((key, keyIndex) => {
+      const value = Number(row[key] || 0);
+      const x = center - ((seriesKeys.length * barW) / 2) + keyIndex * barW;
+      const y = yScale(value);
+      const h = padding.top + plotH - y;
+      return `<rect x="${x}" y="${y}" width="${barW * 0.82}" height="${Math.max(1, h)}" rx="10" fill="${colors[key]}"/>`;
+    }).join("");
+    const rotate = data.length > 14 ? ` transform="rotate(-45 ${center} ${height - 105})"` : "";
+    const label = String(row.label || "").slice(0, 18);
+    return `${items}<text x="${center}" y="${height - 105}"${rotate} fill="#c7d2e1" font-size="18" text-anchor="${data.length > 14 ? "end" : "middle"}">${escapeHtml(label)}</text>`;
+  }).join("");
+  const legend = seriesKeys.map((key, index) => {
+    const x = padding.left + index * 220;
+    return `<rect x="${x}" y="95" width="28" height="18" rx="5" fill="${colors[key]}"/>${svgText(key[0].toUpperCase() + key.slice(1), x + 40, 112, 22, "#c7d2e1", 600)}`;
+  }).join("");
+  const totalText = seriesKeys.map((key) => `${key}: ${moneyText(data.reduce((sum, row) => sum + Number(row[key] || 0), 0))}`).join("  |  ");
+
+  return `
+    <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+      <rect width="100%" height="100%" fill="#081016"/>
+      <rect x="36" y="36" width="${width - 72}" height="${height - 72}" rx="28" fill="#111923" stroke="#263341"/>
+      ${svgText(spec.title, 80, 78, 34, "#e7eef7", 800)}
+      ${svgText(`${spec.start || ""}${spec.end ? ` a ${spec.end}` : ""}`, 80, 118, 20, "#8ca0b3", 500)}
+      ${legend}
+      ${grid}
+      <line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${padding.top + plotH}" stroke="#8ca0b3"/>
+      <line x1="${padding.left}" x2="${width - padding.right}" y1="${padding.top + plotH}" y2="${padding.top + plotH}" stroke="#8ca0b3"/>
+      ${bars}
+      ${svgText(totalText, 80, 940, 22, "#e7eef7", 600)}
+      ${svgText("Financeiro Local", width - 80, 940, 20, "#8ca0b3", 600, "end")}
+    </svg>
+  `;
+}
+
+async function buildTelegramChart(text) {
+  const spec = inferChartSpec(text);
+  if (!spec) return { error: "Entendi que você quer um gráfico, mas preciso de mais contexto. Exemplo: gráfico de receita e despesa mês a mês ou gráfico diário dos últimos 30 dias." };
+  const data = chartDataForSpec(spec);
+  if (!data.length || data.every((row) => Object.keys(row).filter((key) => key !== "label").every((key) => !Number(row[key] || 0)))) {
+    return { error: "Não encontrei dados suficientes para gerar esse gráfico no período pedido." };
+  }
+  const svg = renderChartSvg(spec, data);
+  const buffer = await sharp(Buffer.from(svg)).png({ compressionLevel: 8 }).toBuffer();
+  return {
+    buffer,
+    filename: `grafico-financeiro-${Date.now()}.png`,
+    caption: [
+      `<b>${escapeHtml(spec.title)}</b>`,
+      `Itens no gráfico: ${data.length}`,
+      "Gerado pelo agente gráfico local.",
+    ].join("\n"),
+  };
 }
 
 function buildTelegramDraftFromData(instanceId, chatId, data) {
@@ -3476,6 +3817,7 @@ function buildTelegramQueryMessage(command, query = null, user = null) {
       "/faturas - faturas do mês",
       "/top - top categorias de despesa",
       "/lancar - lançamento guiado por perguntas",
+      "Peça gráficos em linguagem natural: <code>quero um gráfico de receita e despesa mês a mês</code>",
       "",
       "Para lançar: envie algo como <code>gastei 42,90 no mercado</code>.",
     ].join("\n");
@@ -3570,6 +3912,14 @@ async function handleTelegramText(message) {
     return;
   }
 
+  if (text.startsWith("/grafico") || text.startsWith("/gráfico")) {
+    await sendTelegramMessage(chatId, "Gerando gráfico...");
+    const result = await runInInstance(boundInstanceId, () => buildTelegramChart(text));
+    if (result.error) await sendTelegramMessage(chatId, result.error);
+    else await sendTelegramPhotoBuffer(chatId, result.buffer, result.filename, result.caption);
+    return;
+  }
+
   if (text.startsWith("/")) {
     const response = runInInstance(boundInstanceId, () => {
       const queryConfig = getTelegramAlertsConfig();
@@ -3583,6 +3933,14 @@ async function handleTelegramText(message) {
   }
 
   if (await handleTelegramFlowText(chatId, text)) return;
+
+  if (isTelegramChartRequest(text)) {
+    await sendTelegramMessage(chatId, "Entendi o pedido de gráfico. Vou gerar a imagem.");
+    const result = await runInInstance(boundInstanceId, () => buildTelegramChart(text));
+    if (result.error) await sendTelegramMessage(chatId, result.error);
+    else await sendTelegramPhotoBuffer(chatId, result.buffer, result.filename, result.caption);
+    return;
+  }
 
   const result = buildTelegramDraft(boundInstanceId, chatId, text);
   if (result.error) {
